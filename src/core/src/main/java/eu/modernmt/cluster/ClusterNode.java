@@ -53,9 +53,9 @@ public class ClusterNode {
     UPDATED, // Node updated its models with the latest contributions
     RUNNING, // Node is running and it can receive translation requests
     DEGRADED, // Node has some decoder processes and it is recovering (CAN handle translation
-              // requests)
+    // requests)
     UNAVAILABLE, // Node has no decoder processes and it is recovering (CANNOT handle translation
-                 // requests)
+    // requests)
     SHUTDOWN, // Node is shutting down
     TERMINATED, // Node is no longer active
 

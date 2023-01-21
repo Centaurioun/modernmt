@@ -1,6 +1,5 @@
 package eu.modernmt.processing.string;
 
-
 /**
  * * Created by andrea on 22/02/17.
  *

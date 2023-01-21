@@ -59,7 +59,7 @@ public class EmbeddedKafka extends EmbeddedService {
     FileUtils.deleteDirectory(this.runtime);
     FileUtils.forceMkdir(this.runtime);
     deleteClusterId(); // we want to delete saved cluster-id because we reset Zookeeper at every
-                       // startup
+    // startup
 
     FileUtils.deleteQuietly(this.logFile);
     FileUtils.touch(this.logFile);
