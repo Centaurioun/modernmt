@@ -4,19 +4,18 @@ import eu.modernmt.model.corpus.TranslationUnit;
 
 public interface MultilingualCorpusFilter {
 
-    interface Initializer {
+  interface Initializer {
 
-        void onBegin();
+    void onBegin();
 
-        void onTranslationUnit(TranslationUnit tu, int index);
+    void onTranslationUnit(TranslationUnit tu, int index);
 
-        void onEnd();
-    }
+    void onEnd();
+  }
 
-    Initializer getInitializer();
+  Initializer getInitializer();
 
-    boolean accept(TranslationUnit tu, int index);
+  boolean accept(TranslationUnit tu, int index);
 
-    void clear();
-
+  void clear();
 }

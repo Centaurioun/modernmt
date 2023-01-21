@@ -8,23 +8,23 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 
 public class CorpusAnalyzer extends DelegatingAnalyzerWrapper {
 
-    private static final int MAX_INDEXED_WORDS_PER_DOCUMENT = 100000000;
+  private static final int MAX_INDEXED_WORDS_PER_DOCUMENT = 100000000;
 
-    public CorpusAnalyzer() {
-        super(PER_FIELD_REUSE_STRATEGY);
-    }
+  public CorpusAnalyzer() {
+    super(PER_FIELD_REUSE_STRATEGY);
+  }
 
-    @Override
-    protected Analyzer getWrappedAnalyzer(String fieldName) {
-        Analyzer analyzer;
+  @Override
+  protected Analyzer getWrappedAnalyzer(String fieldName) {
+    Analyzer analyzer;
 
-        String language = DocumentBuilder.getLanguageForContentField(fieldName);
-        if (language == null)
-            analyzer = new StandardAnalyzer();
-        else
-            analyzer = new LimitTokenCountAnalyzer(LanguageAnalyzer.getByLanguage(language), MAX_INDEXED_WORDS_PER_DOCUMENT, false);
+    String language = DocumentBuilder.getLanguageForContentField(fieldName);
+    if (language == null) analyzer = new StandardAnalyzer();
+    else
+      analyzer =
+          new LimitTokenCountAnalyzer(
+              LanguageAnalyzer.getByLanguage(language), MAX_INDEXED_WORDS_PER_DOCUMENT, false);
 
-        return analyzer;
-    }
-
+    return analyzer;
+  }
 }

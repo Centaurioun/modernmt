@@ -2,77 +2,82 @@ package eu.modernmt.api.actions.translation;
 
 import eu.modernmt.aligner.Aligner;
 import eu.modernmt.aligner.AlignerException;
-import eu.modernmt.facade.ModernMT;
-import eu.modernmt.lang.LanguageDirection;
-import eu.modernmt.model.Token;
-import eu.modernmt.model.Translation;
-import eu.modernmt.processing.ProcessingException;
 import eu.modernmt.api.framework.HttpMethod;
 import eu.modernmt.api.framework.Parameters;
 import eu.modernmt.api.framework.RESTRequest;
 import eu.modernmt.api.framework.actions.ObjectAction;
 import eu.modernmt.api.framework.routing.Route;
 import eu.modernmt.api.model.ProjectedTranslation;
+import eu.modernmt.facade.ModernMT;
+import eu.modernmt.lang.LanguageDirection;
+import eu.modernmt.model.Token;
+import eu.modernmt.model.Translation;
+import eu.modernmt.processing.ProcessingException;
 
-/**
- * Created by lucamastrostefano on 15/03/16.
- */
+/** Created by lucamastrostefano on 15/03/16. */
 @Route(aliases = "tags-projection", method = HttpMethod.GET)
 public class TagsProjection extends ObjectAction<ProjectedTranslation> {
 
-    @Override
-    protected ProjectedTranslation execute(RESTRequest req, Parameters _params) throws AlignerException, ProcessingException {
-        Params params = (Params) _params;
+  @Override
+  protected ProjectedTranslation execute(RESTRequest req, Parameters _params)
+      throws AlignerException, ProcessingException {
+    Params params = (Params) _params;
 
-        Translation taggedTranslation;
-        if (params.symmetrizationStrategy != null)
-            taggedTranslation = ModernMT.tags.project(params.direction, params.sentence, params.translation, params.symmetrizationStrategy);
-        else
-            taggedTranslation = ModernMT.tags.project(params.direction, params.sentence, params.translation);
+    Translation taggedTranslation;
+    if (params.symmetrizationStrategy != null)
+      taggedTranslation =
+          ModernMT.tags.project(
+              params.direction, params.sentence, params.translation, params.symmetrizationStrategy);
+    else
+      taggedTranslation =
+          ModernMT.tags.project(params.direction, params.sentence, params.translation);
 
-        ProjectedTranslation result = new ProjectedTranslation(taggedTranslation.toString());
+    ProjectedTranslation result = new ProjectedTranslation(taggedTranslation.toString());
 
-        if (params.showDetails) {
-            result.setSourceTokens(stringifyTokens(taggedTranslation.getSource().getWords()));
-            result.setTargetTokens(stringifyTokens(taggedTranslation.getWords()));
-            result.setAlignment(taggedTranslation.getWordAlignment());
-        }
-
-        return result;
+    if (params.showDetails) {
+      result.setSourceTokens(stringifyTokens(taggedTranslation.getSource().getWords()));
+      result.setTargetTokens(stringifyTokens(taggedTranslation.getWords()));
+      result.setAlignment(taggedTranslation.getWordAlignment());
     }
 
-    private static String[] stringifyTokens(Token[] tokens) {
-        String[] strings = new String[tokens.length];
-        for (int i = 0; i < strings.length; i++) {
-            strings[i] = tokens[i].getText();
-        }
-        return strings;
+    return result;
+  }
+
+  private static String[] stringifyTokens(Token[] tokens) {
+    String[] strings = new String[tokens.length];
+    for (int i = 0; i < strings.length; i++) {
+      strings[i] = tokens[i].getText();
     }
+    return strings;
+  }
 
-    @Override
-    protected Parameters getParameters(RESTRequest req) throws Parameters.ParameterParsingException {
-        return new Params(req);
+  @Override
+  protected Parameters getParameters(RESTRequest req) throws Parameters.ParameterParsingException {
+    return new Params(req);
+  }
+
+  public static class Params extends Parameters {
+
+    public final LanguageDirection direction;
+    public final String sentence;
+    public final String translation;
+    public final Aligner.SymmetrizationStrategy symmetrizationStrategy;
+    public final boolean showDetails;
+
+    public Params(RESTRequest req) throws ParameterParsingException {
+      super(req);
+
+      LanguageDirection engineDirection =
+          ModernMT.getNode().getEngine().getLanguageIndex().asSingleLanguagePair();
+      this.direction =
+          engineDirection != null
+              ? getLanguagePair("source", "target", engineDirection)
+              : getLanguagePair("source", "target");
+      this.sentence = getString("text", false);
+      this.translation = getString("translation", false);
+      this.showDetails = getBoolean("verbose", false);
+      this.symmetrizationStrategy =
+          getEnum("symmetrization", Aligner.SymmetrizationStrategy.class, null);
     }
-
-    public static class Params extends Parameters {
-
-        public final LanguageDirection direction;
-        public final String sentence;
-        public final String translation;
-        public final Aligner.SymmetrizationStrategy symmetrizationStrategy;
-        public final boolean showDetails;
-
-        public Params(RESTRequest req) throws ParameterParsingException {
-            super(req);
-
-            LanguageDirection engineDirection = ModernMT.getNode().getEngine().getLanguageIndex().asSingleLanguagePair();
-            this.direction = engineDirection != null ?
-                    getLanguagePair("source", "target", engineDirection) :
-                    getLanguagePair("source", "target");
-            this.sentence = getString("text", false);
-            this.translation = getString("translation", false);
-            this.showDetails = getBoolean("verbose", false);
-            this.symmetrizationStrategy = getEnum("symmetrization", Aligner.SymmetrizationStrategy.class, null);
-        }
-    }
+  }
 }

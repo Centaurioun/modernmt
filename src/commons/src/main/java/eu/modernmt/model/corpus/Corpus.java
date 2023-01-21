@@ -3,26 +3,21 @@ package eu.modernmt.model.corpus;
 import eu.modernmt.io.LineReader;
 import eu.modernmt.io.LineWriter;
 import eu.modernmt.lang.Language;
-import eu.modernmt.lang.LanguageDirection;
-
 import java.io.IOException;
 import java.io.Reader;
 
-/**
- * Created by davide on 10/07/15.
- */
+/** Created by davide on 10/07/15. */
 public interface Corpus {
 
-    String getName();
+  String getName();
 
-    Language getLanguage();
+  Language getLanguage();
 
-    int getLineCount();
+  int getLineCount();
 
-    LineReader getContentReader() throws IOException;
+  LineReader getContentReader() throws IOException;
 
-    LineWriter getContentWriter(boolean append) throws IOException;
+  LineWriter getContentWriter(boolean append) throws IOException;
 
-    Reader getRawContentReader() throws IOException, UnsupportedOperationException;
-
+  Reader getRawContentReader() throws IOException, UnsupportedOperationException;
 }

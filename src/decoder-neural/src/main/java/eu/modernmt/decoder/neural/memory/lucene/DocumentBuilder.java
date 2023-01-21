@@ -5,60 +5,56 @@ import eu.modernmt.lang.Language;
 import eu.modernmt.lang.LanguageDirection;
 import eu.modernmt.memory.ScoreEntry;
 import eu.modernmt.memory.TranslationMemory;
+import java.util.Map;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.Term;
 
-import java.util.Map;
-
-/**
- * Created by davide on 23/05/17.
- */
+/** Created by davide on 23/05/17. */
 public interface DocumentBuilder {
 
-    // Factory methods
+  // Factory methods
 
-    Document create(TranslationUnitMessage unit);
+  Document create(TranslationUnitMessage unit);
 
-    Document create(TranslationUnitMessage unit, String hash);
+  Document create(TranslationUnitMessage unit, String hash);
 
-    Document create(Map<Short, Long> channels);
+  Document create(Map<Short, Long> channels);
 
-    // Getters
+  // Getters
 
-    long getMemory(Document self);
+  long getMemory(Document self);
 
-    String getSourceLanguage(String fieldName);
+  String getSourceLanguage(String fieldName);
 
-    String getTargetLanguage(String fieldName);
+  String getTargetLanguage(String fieldName);
 
-    // Parsing
+  // Parsing
 
-    ScoreEntry asScoreEntry(Document self);
+  ScoreEntry asScoreEntry(Document self);
 
-    ScoreEntry asScoreEntry(Document self, LanguageDirection direction);
+  ScoreEntry asScoreEntry(Document self, LanguageDirection direction);
 
-    TranslationMemory.Entry asEntry(Document self);
+  TranslationMemory.Entry asEntry(Document self);
 
-    Map<Short, Long> asChannels(Document self);
+  Map<Short, Long> asChannels(Document self);
 
-    // Term constructors
+  // Term constructors
 
-    Term makeHashTerm(String h);
+  Term makeHashTerm(String h);
 
-    Term makeTuidHashTerm(String hash);
+  Term makeTuidHashTerm(String hash);
 
-    Term makeMemoryTerm(long memory);
+  Term makeMemoryTerm(long memory);
 
-    Term makeChannelsTerm();
+  Term makeChannelsTerm();
 
-    Term makeLanguageTerm(Language language);
+  Term makeLanguageTerm(Language language);
 
-    // Fields builders
+  // Fields builders
 
-    boolean isHashField(String field);
+  boolean isHashField(String field);
 
-    String makeLanguageFieldName(Language language);
+  String makeLanguageFieldName(Language language);
 
-    String makeContentFieldName(LanguageDirection direction);
-
+  String makeContentFieldName(LanguageDirection direction);
 }

@@ -5,25 +5,24 @@ import java.util.concurrent.TimeUnit;
 
 public class CountDownTranslationLock implements Scheduler.TranslationLock {
 
-    private final CountDownLatch count;
+  private final CountDownLatch count;
 
-    public CountDownTranslationLock(int count) {
-        this.count = new CountDownLatch(count);
-    }
+  public CountDownTranslationLock(int count) {
+    this.count = new CountDownLatch(count);
+  }
 
-    @Override
-    public void await() throws InterruptedException {
-        this.count.await();
-    }
+  @Override
+  public void await() throws InterruptedException {
+    this.count.await();
+  }
 
-    @Override
-    public boolean await(long timeout, TimeUnit unit) throws InterruptedException {
-        return this.count.await(timeout, unit);
-    }
+  @Override
+  public boolean await(long timeout, TimeUnit unit) throws InterruptedException {
+    return this.count.await(timeout, unit);
+  }
 
-    @Override
-    public void translationSplitCompleted(TranslationSplit translationSplit) {
-        count.countDown();
-    }
-
+  @Override
+  public void translationSplitCompleted(TranslationSplit translationSplit) {
+    count.countDown();
+  }
 }

@@ -4,6 +4,5 @@ import java.util.List;
 
 public interface LanguageToolTokenizer {
 
-    List<String> tokenize(String text);
-
+  List<String> tokenize(String text);
 }

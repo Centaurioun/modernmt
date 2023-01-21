@@ -5,36 +5,41 @@ import eu.modernmt.lang.LanguageDirection;
 import eu.modernmt.memory.ScoreEntry;
 import eu.modernmt.model.Sentence;
 import eu.modernmt.model.Translation;
-
 import java.io.Closeable;
 import java.io.IOException;
 
 public interface PythonDecoder extends Closeable {
 
-    interface Builder {
+  interface Builder {
 
-        PythonDecoder startOnCPU() throws IOException;
+    PythonDecoder startOnCPU() throws IOException;
 
-        PythonDecoder startOnGPU(int gpu) throws IOException;
+    PythonDecoder startOnGPU(int gpu) throws IOException;
+  }
 
-    }
+  int getGPU();
 
-    int getGPU();
+  boolean isAlive();
 
-    boolean isAlive();
+  Translation translate(LanguageDirection direction, Sentence sentence, int nBest)
+      throws DecoderException;
 
-    Translation translate(LanguageDirection direction, Sentence sentence, int nBest) throws DecoderException;
+  Translation translate(
+      LanguageDirection direction, Sentence sentence, ScoreEntry[] suggestions, int nBest)
+      throws DecoderException;
 
-    Translation translate(LanguageDirection direction, Sentence sentence, ScoreEntry[] suggestions, int nBest) throws DecoderException;
+  Translation[] translate(LanguageDirection direction, Sentence[] sentences, int nBest)
+      throws DecoderException;
 
-    Translation[] translate(LanguageDirection direction, Sentence[] sentences, int nBest) throws DecoderException;
+  Translation[] translate(
+      LanguageDirection direction, Sentence[] sentences, ScoreEntry[] suggestions, int nBest)
+      throws DecoderException;
 
-    Translation[] translate(LanguageDirection direction, Sentence[] sentences, ScoreEntry[] suggestions, int nBest) throws DecoderException;
+  Translation align(LanguageDirection direction, Sentence sentence, String[] translation)
+      throws DecoderException;
 
-    Translation align(LanguageDirection direction, Sentence sentence, String[] translation) throws DecoderException;
+  Translation[] align(LanguageDirection direction, Sentence[] sentences, String[][] translations)
+      throws DecoderException;
 
-    Translation[] align(LanguageDirection direction, Sentence[] sentences, String[][] translations) throws DecoderException;
-
-    void test() throws DecoderException;
-
+  void test() throws DecoderException;
 }

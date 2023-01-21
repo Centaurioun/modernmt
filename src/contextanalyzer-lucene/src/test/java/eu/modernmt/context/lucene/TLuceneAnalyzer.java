@@ -15,247 +15,257 @@ import eu.modernmt.model.Memory;
 import eu.modernmt.model.corpus.MultilingualCorpus;
 import eu.modernmt.model.corpus.TUReader;
 import eu.modernmt.model.corpus.TranslationUnit;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.util.*;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.util.*;
-
-/**
- * Created by davide on 06/08/17.
- */
+/** Created by davide on 06/08/17. */
 public class TLuceneAnalyzer extends LuceneAnalyzer {
 
-    public static class TCorporaStorage extends CorporaStorage {
+  public static class TCorporaStorage extends CorporaStorage {
 
-        public TCorporaStorage(File path) throws IOException {
-            super(path);
-        }
-
-        public Bucket getBucket(long id, LanguageDirection language) throws IOException {
-            Bucket bucket = super.buckets.get(id, language, null);
-            if (bucket != null && bucket.getSize() == 0)
-                bucket = null;
-            return bucket;
-        }
+    public TCorporaStorage(File path) throws IOException {
+      super(path);
     }
 
-    private final File path;
+    public Bucket getBucket(long id, LanguageDirection language) throws IOException {
+      Bucket bucket = super.buckets.get(id, language, null);
+      if (bucket != null && bucket.getSize() == 0) bucket = null;
+      return bucket;
+    }
+  }
 
-    private static File getTempDirectory() throws IOException {
-        return Files.createTempDirectory("TLuceneAnalyzer").toFile();
+  private final File path;
+
+  private static File getTempDirectory() throws IOException {
+    return Files.createTempDirectory("TLuceneAnalyzer").toFile();
+  }
+
+  public TLuceneAnalyzer() throws IOException {
+    this(new AnalyzerConfig(null));
+  }
+
+  public TLuceneAnalyzer(AnalyzerConfig config) throws IOException {
+    this(getTempDirectory(), config);
+  }
+
+  private TLuceneAnalyzer(File path, AnalyzerConfig config) throws IOException {
+    super(
+        new ContextAnalyzerIndex(new File(path, "index")),
+        new TCorporaStorage(new File(path, "storage")),
+        config);
+    this.path = path;
+  }
+
+  @Override
+  public TCorporaStorage getStorage() {
+    return (TCorporaStorage) super.getStorage();
+  }
+
+  public int getIndexSize() throws IOException {
+    return getIndex().getIndexReader().numDocs();
+  }
+
+  public int getStorageSize() throws IOException {
+    return getStorage().size();
+  }
+
+  public Entry getEntry(long memory, LanguageDirection direction) throws IOException {
+    ContextAnalyzerIndex index = getIndex();
+    TCorporaStorage storage = getStorage();
+
+    String docId = DocumentBuilder.makeId(memory, direction);
+
+    // Bucket for content
+
+    String content = null;
+
+    Bucket bucket = storage.getBucket(memory, direction);
+    if (bucket != null) {
+      InputStream stream = null;
+
+      try {
+        stream = bucket.getContentStream();
+        content = IOUtils.toString(stream, UTF8Charset.get());
+      } finally {
+        IOUtils.closeQuietly(stream);
+      }
     }
 
-    public TLuceneAnalyzer() throws IOException {
-        this(new AnalyzerConfig(null));
+    // Index for terms
+
+    Set<String> terms = null;
+
+    IndexSearcher searcher = index.getIndexSearcher();
+    TermQuery query = new TermQuery(DocumentBuilder.makeIdTerm(docId));
+    TopDocs docs = searcher.search(query, 1);
+
+    if (docs.scoreDocs.length > 0) {
+      String filedName = DocumentBuilder.makeContentFieldName(direction);
+      terms =
+          LuceneUtils.getTermFrequencies(
+                  searcher.getIndexReader(), docs.scoreDocs[0].doc, filedName)
+              .keySet();
     }
 
-    public TLuceneAnalyzer(AnalyzerConfig config) throws IOException {
-        this(getTempDirectory(), config);
-    }
+    // Creating result
 
-    private TLuceneAnalyzer(File path, AnalyzerConfig config) throws IOException {
-        super(new ContextAnalyzerIndex(new File(path, "index")), new TCorporaStorage(new File(path, "storage")), config);
-        this.path = path;
+    if (terms == null && content == null) return null;
+
+    return new Entry(memory, direction, terms, content);
+  }
+
+  @Override
+  public void close() throws IOException {
+    try {
+      super.close();
+    } finally {
+      FileUtils.deleteDirectory(this.path);
+    }
+  }
+
+  public static final class Entry {
+
+    public final long memory;
+    public final LanguageDirection language;
+    public final Set<String> terms;
+    public final String content;
+
+    public Entry(long memory, LanguageDirection language, Set<String> terms, String content) {
+      this.memory = memory;
+      this.language = language;
+      this.terms = Collections.unmodifiableSet(new HashSet<>(terms));
+      this.content = content == null ? null : content.trim();
     }
 
     @Override
-    public TCorporaStorage getStorage() {
-        return (TCorporaStorage) super.getStorage();
-    }
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
 
-    public int getIndexSize() throws IOException {
-        return getIndex().getIndexReader().numDocs();
-    }
+      Entry entry = (Entry) o;
 
-    public int getStorageSize() throws IOException {
-        return getStorage().size();
-    }
-
-    public Entry getEntry(long memory, LanguageDirection direction) throws IOException {
-        ContextAnalyzerIndex index = getIndex();
-        TCorporaStorage storage = getStorage();
-
-        String docId = DocumentBuilder.makeId(memory, direction);
-
-        // Bucket for content
-
-        String content = null;
-
-        Bucket bucket = storage.getBucket(memory, direction);
-        if (bucket != null) {
-            InputStream stream = null;
-
-            try {
-                stream = bucket.getContentStream();
-                content = IOUtils.toString(stream, UTF8Charset.get());
-            } finally {
-                IOUtils.closeQuietly(stream);
-            }
-        }
-
-        // Index for terms
-
-        Set<String> terms = null;
-
-        IndexSearcher searcher = index.getIndexSearcher();
-        TermQuery query = new TermQuery(DocumentBuilder.makeIdTerm(docId));
-        TopDocs docs = searcher.search(query, 1);
-
-        if (docs.scoreDocs.length > 0) {
-            String filedName = DocumentBuilder.makeContentFieldName(direction);
-            terms = LuceneUtils.getTermFrequencies(searcher.getIndexReader(), docs.scoreDocs[0].doc, filedName).keySet();
-        }
-
-        // Creating result
-
-        if (terms == null && content == null)
-            return null;
-
-        return new Entry(memory, direction, terms, content);
+      if (memory != entry.memory) return false;
+      return language.equals(entry.language);
     }
 
     @Override
-    public void close() throws IOException {
-        try {
-            super.close();
-        } finally {
-            FileUtils.deleteDirectory(this.path);
-        }
+    public int hashCode() {
+      int result = (int) (memory ^ (memory >>> 32));
+      result = 31 * result + language.hashCode();
+      return result;
     }
 
-    public static final class Entry {
-
-        public final long memory;
-        public final LanguageDirection language;
-        public final Set<String> terms;
-        public final String content;
-
-        public Entry(long memory, LanguageDirection language, Set<String> terms, String content) {
-            this.memory = memory;
-            this.language = language;
-            this.terms = Collections.unmodifiableSet(new HashSet<>(terms));
-            this.content = content == null ? null : content.trim();
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-
-            Entry entry = (Entry) o;
-
-            if (memory != entry.memory) return false;
-            return language.equals(entry.language);
-        }
-
-        @Override
-        public int hashCode() {
-            int result = (int) (memory ^ (memory >>> 32));
-            result = 31 * result + language.hashCode();
-            return result;
-        }
-
-        @Override
-        public String toString() {
-            return "Entry{" +
-                    "memory=" + memory +
-                    ", language=" + language +
-                    '}';
-        }
+    @Override
+    public String toString() {
+      return "Entry{" + "memory=" + memory + ", language=" + language + '}';
     }
+  }
 
-    // DataListener utils
+  // DataListener utils
 
-    public void forceAnalysis() throws IOException {
-        super.runAnalysis(null, 0, Integer.MAX_VALUE);
-    }
+  public void forceAnalysis() throws IOException {
+    super.runAnalysis(null, 0, Integer.MAX_VALUE);
+  }
 
-    public Map<Short, Long> getLatestChannelPositions() {
-        return getStorage().getLatestChannelPositions();
-    }
+  public Map<Short, Long> getLatestChannelPositions() {
+    return getStorage().getLatestChannelPositions();
+  }
 
-    public void onDelete(final DeletionMessage deletion) throws IOException {
-        getStorage().onDataReceived(new DataBatch() {
+  public void onDelete(final DeletionMessage deletion) throws IOException {
+    getStorage()
+        .onDataReceived(
+            new DataBatch() {
 
-            @Override
-            public Collection<TranslationUnitMessage> getTranslationUnits() {
+              @Override
+              public Collection<TranslationUnitMessage> getTranslationUnits() {
                 return Collections.emptyList();
-            }
+              }
 
-            @Override
-            public Collection<DeletionMessage> getDeletions() {
+              @Override
+              public Collection<DeletionMessage> getDeletions() {
                 return Collections.singleton(deletion);
-            }
+              }
 
-            @Override
-            public Map<Short, Long> getChannelPositions() {
+              @Override
+              public Map<Short, Long> getChannelPositions() {
                 return Collections.singletonMap(deletion.channel, deletion.channelPosition);
-            }
+              }
+            });
 
-        });
+    this.forceAnalysis();
+  }
 
-        this.forceAnalysis();
+  public void onDataReceived(Collection<TranslationUnitMessage> units) throws IOException {
+    final HashMap<Short, Long> positions = new HashMap<>();
+    for (TranslationUnitMessage unit : units) {
+      Long existingPosition = positions.get(unit.channel);
+
+      if (existingPosition == null || existingPosition < unit.channelPosition)
+        positions.put(unit.channel, unit.channelPosition);
     }
 
-    public void onDataReceived(Collection<TranslationUnitMessage> units) throws IOException {
-        final HashMap<Short, Long> positions = new HashMap<>();
-        for (TranslationUnitMessage unit : units) {
-            Long existingPosition = positions.get(unit.channel);
-
-            if (existingPosition == null || existingPosition < unit.channelPosition)
-                positions.put(unit.channel, unit.channelPosition);
-        }
-
-        getStorage().onDataReceived(new DataBatch() {
-            @Override
-            public Collection<TranslationUnitMessage> getTranslationUnits() {
+    getStorage()
+        .onDataReceived(
+            new DataBatch() {
+              @Override
+              public Collection<TranslationUnitMessage> getTranslationUnits() {
                 return units;
-            }
+              }
 
-            @Override
-            public Collection<DeletionMessage> getDeletions() {
+              @Override
+              public Collection<DeletionMessage> getDeletions() {
                 return Collections.emptyList();
-            }
+              }
 
-            @Override
-            public Map<Short, Long> getChannelPositions() {
+              @Override
+              public Map<Short, Long> getChannelPositions() {
                 return positions;
-            }
-        });
+              }
+            });
 
-        this.forceAnalysis();
+    this.forceAnalysis();
+  }
+
+  public void onDataReceived(Memory memory, MultilingualCorpus corpus) throws IOException {
+    Long position = getStorage().getLatestChannelPositions().getOrDefault((short) 0, 0L);
+    if (position == null) position = 0L;
+    else position++;
+
+    ArrayList<TranslationUnitMessage> units = new ArrayList<>();
+    TUReader reader = null;
+    try {
+      reader = corpus.getContentReader();
+
+      TranslationUnit tu;
+      while ((tu = reader.read()) != null) {
+        TranslationUnitMessage unit =
+            new TranslationUnitMessage(
+                (short) 0,
+                position++,
+                memory.getId(),
+                memory.getOwner(),
+                tu,
+                false,
+                null,
+                null,
+                tu.language,
+                null,
+                null,
+                null);
+        units.add(unit);
+      }
+    } finally {
+      IOUtils.closeQuietly(reader);
     }
 
-    public void onDataReceived(Memory memory, MultilingualCorpus corpus) throws IOException {
-        Long position = getStorage().getLatestChannelPositions().getOrDefault((short) 0, 0L);
-        if (position == null)
-            position = 0L;
-        else
-            position++;
-
-        ArrayList<TranslationUnitMessage> units = new ArrayList<>();
-        TUReader reader = null;
-        try {
-            reader = corpus.getContentReader();
-
-            TranslationUnit tu;
-            while ((tu = reader.read()) != null) {
-                TranslationUnitMessage unit = new TranslationUnitMessage((short) 0, position++, memory.getId(), memory.getOwner(), tu,
-                        false, null, null,
-                        tu.language, null, null, null);
-                units.add(unit);
-            }
-        } finally {
-            IOUtils.closeQuietly(reader);
-        }
-
-        onDataReceived(units);
-    }
+    onDataReceived(units);
+  }
 }

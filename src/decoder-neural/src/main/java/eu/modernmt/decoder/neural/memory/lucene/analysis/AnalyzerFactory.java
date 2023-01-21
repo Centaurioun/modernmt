@@ -5,14 +5,13 @@ import org.apache.lucene.search.similarities.Similarity;
 
 public interface AnalyzerFactory {
 
-    Analyzer createContentAnalyzer();
+  Analyzer createContentAnalyzer();
 
-    Analyzer createHashAnalyzer();
+  Analyzer createHashAnalyzer();
 
-    Analyzer createShortQueryAnalyzer();
+  Analyzer createShortQueryAnalyzer();
 
-    Analyzer createLongQueryAnalyzer();
+  Analyzer createLongQueryAnalyzer();
 
-    Similarity createSimilarity();
-
+  Similarity createSimilarity();
 }

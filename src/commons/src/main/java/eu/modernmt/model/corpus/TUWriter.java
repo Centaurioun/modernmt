@@ -5,7 +5,7 @@ import java.io.IOException;
 
 public interface TUWriter extends Closeable {
 
-    void write(TranslationUnit tu) throws IOException;
+  void write(TranslationUnit tu) throws IOException;
 
-    void flush() throws IOException;
+  void flush() throws IOException;
 }

@@ -7,14 +7,13 @@ import eu.modernmt.api.framework.RESTRequest;
 
 public class VoidActionResult extends JSONActionResult {
 
-    public static VoidActionResult INSTANCE = new VoidActionResult();
+  public static VoidActionResult INSTANCE = new VoidActionResult();
 
-    private VoidActionResult() {
-    }
+  private VoidActionResult() {}
 
-    @Override
-    public JsonElement dump(JSONAction action, RESTRequest req, Parameters params) throws JsonParseException {
-        return null;
-    }
-
+  @Override
+  public JsonElement dump(JSONAction action, RESTRequest req, Parameters params)
+      throws JsonParseException {
+    return null;
+  }
 }

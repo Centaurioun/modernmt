@@ -1,193 +1,176 @@
 package eu.modernmt.config.xml;
 
 import eu.modernmt.lang.Language;
+import java.util.regex.Pattern;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
-import java.util.regex.Pattern;
-
-/**
- * Created by davide on 04/01/17.
- */
+/** Created by davide on 04/01/17. */
 abstract class XMLAbstractBuilder {
 
-    private static final Pattern ENV_VAR_PATTERN = Pattern.compile("\\$\\{[A-Za-z._]+}");
-    protected final Element element;
+  private static final Pattern ENV_VAR_PATTERN = Pattern.compile("\\$\\{[A-Za-z._]+}");
+  protected final Element element;
 
-    public XMLAbstractBuilder(Element element) {
-        this.element = element;
+  public XMLAbstractBuilder(Element element) {
+    this.element = element;
+  }
+
+  protected static Element getChild(Element element, String childName) {
+    if (element == null) return null;
+
+    NodeList children = element.getElementsByTagName(childName);
+    if (children.getLength() == 0) return null;
+
+    Node child = children.item(0);
+    return child instanceof Element ? (Element) child : null;
+  }
+
+  protected Element getChild(String childName) {
+    return getChild(element, childName);
+  }
+
+  protected static boolean hasChild(Element element, String childName) {
+    return getChild(element, childName) != null;
+  }
+
+  protected boolean hasChild(String childName) {
+    return hasChild(element, childName);
+  }
+
+  protected static Element[] getChildren(Element element, String name) {
+    if (element == null) return null;
+
+    NodeList children = element.getElementsByTagName(name);
+    if (children.getLength() == 0) return null;
+
+    Element[] result = new Element[children.getLength()];
+    for (int i = 0; i < result.length; i++) {
+      Node child = children.item(i);
+      result[i] = child instanceof Element ? (Element) child : null;
     }
 
-    protected static Element getChild(Element element, String childName) {
-        if (element == null)
-            return null;
+    return result;
+  }
 
-        NodeList children = element.getElementsByTagName(childName);
-        if (children.getLength() == 0)
-            return null;
+  protected Element[] getChildren(String name) {
+    return getChildren(element, name);
+  }
 
-        Node child = children.item(0);
-        return child instanceof Element ? (Element) child : null;
+  protected static boolean hasAttribute(Element element, String attr) {
+    if (element == null) return false;
+
+    String value = element.getAttribute(attr);
+    return value != null && !value.isEmpty();
+  }
+
+  protected boolean hasAttribute(String attr) {
+    return hasAttribute(element, attr);
+  }
+
+  private static String getAttribute(Element element, String attr) {
+    if (element == null) return null;
+
+    String value = element.getAttribute(attr);
+    if (value == null) return null;
+
+    if (ENV_VAR_PATTERN.matcher(value).matches()) {
+      String key = value.substring(2, value.length() - 1);
+      value = System.getProperty(key);
+
+      if (value == null) value = System.getenv(key);
+
+      if (value == null)
+        throw new IllegalArgumentException("Undefined environment variable: " + key);
     }
 
-    protected Element getChild(String childName) {
-        return getChild(element, childName);
-    }
+    value = value.trim();
+    if (value.isEmpty()) return null;
 
-    protected static boolean hasChild(Element element, String childName) {
-        return getChild(element, childName) != null;
-    }
+    return value;
+  }
 
-    protected boolean hasChild(String childName) {
-        return hasChild(element, childName);
-    }
+  protected static String getStringAttribute(Element element, String attr) {
+    return getAttribute(element, attr);
+  }
 
-    protected static Element[] getChildren(Element element, String name) {
-        if (element == null)
-            return null;
+  protected String getStringAttribute(String attr) {
+    return getStringAttribute(element, attr);
+  }
 
-        NodeList children = element.getElementsByTagName(name);
-        if (children.getLength() == 0)
-            return null;
+  protected static boolean getBooleanAttribute(Element element, String attr) {
+    return Boolean.parseBoolean(getAttribute(element, attr));
+  }
 
-        Element[] result = new Element[children.getLength()];
-        for (int i = 0; i < result.length; i++) {
-            Node child = children.item(i);
-            result[i] = child instanceof Element ? (Element) child : null;
-        }
+  protected boolean getBooleanAttribute(String attr) {
+    return getBooleanAttribute(element, attr);
+  }
 
-        return result;
-    }
+  protected static <E extends Enum<E>> E getEnumAttribute(
+      Element element, String attr, Class<E> enumClass) {
+    String value = getAttribute(element, attr);
+    return value == null ? null : Enum.valueOf(enumClass, value.toUpperCase());
+  }
 
-    protected Element[] getChildren(String name) {
-        return getChildren(element, name);
-    }
+  protected <E extends Enum<E>> E getEnumAttribute(String attr, Class<E> enumClass) {
+    return getEnumAttribute(element, attr, enumClass);
+  }
 
-    protected static boolean hasAttribute(Element element, String attr) {
-        if (element == null)
-            return false;
+  protected static int getIntAttribute(Element element, String attr) {
+    String value = getAttribute(element, attr);
+    return value == null ? 0 : Integer.parseInt(value);
+  }
 
-        String value = element.getAttribute(attr);
-        return value != null && !value.isEmpty();
-    }
+  protected int getIntAttribute(String attr) {
+    return getIntAttribute(element, attr);
+  }
 
-    protected boolean hasAttribute(String attr) {
-        return hasAttribute(element, attr);
-    }
+  protected static long getLongAttribute(Element element, String attr) {
+    String value = getAttribute(element, attr);
+    return value == null ? 0L : Long.parseLong(value);
+  }
 
-    private static String getAttribute(Element element, String attr) {
-        if (element == null)
-            return null;
+  protected long getLongAttribute(String attr) {
+    return getLongAttribute(element, attr);
+  }
 
-        String value = element.getAttribute(attr);
-        if (value == null)
-            return null;
+  protected static Language getLanguageAttribute(Element element, String attr) {
+    String value = getAttribute(element, attr);
+    return value == null ? null : Language.fromString(value);
+  }
 
-        if (ENV_VAR_PATTERN.matcher(value).matches()) {
-            String key = value.substring(2, value.length() - 1);
-            value = System.getProperty(key);
+  protected Language getLanguageAttribute(String attr) {
+    return getLanguageAttribute(element, attr);
+  }
 
-            if (value == null)
-                value = System.getenv(key);
+  protected static String[] getStringArrayAttribute(Element element, String attr) {
+    String value = getAttribute(element, attr);
+    if (value == null) return null;
 
-            if (value == null)
-                throw new IllegalArgumentException("Undefined environment variable: " + key);
-        }
+    if (value.equalsIgnoreCase("none")) return null;
 
-        value = value.trim();
-        if (value.isEmpty())
-            return null;
+    String[] array = value.split("[,\\s]+");
+    if (array.length == 0) return null;
 
-        return value;
-    }
+    return array;
+  }
 
-    protected static String getStringAttribute(Element element, String attr) {
-        return getAttribute(element, attr);
-    }
+  protected String[] getStringArrayAttribute(String attr) {
+    return getStringArrayAttribute(element, attr);
+  }
 
-    protected String getStringAttribute(String attr) {
-        return getStringAttribute(element, attr);
-    }
+  protected static int[] getIntArrayAttribute(Element element, String attr) {
+    String[] parts = getStringArrayAttribute(element, attr);
+    if (parts == null) return null;
 
-    protected static boolean getBooleanAttribute(Element element, String attr) {
-        return Boolean.parseBoolean(getAttribute(element, attr));
-    }
+    int[] array = new int[parts.length];
 
-    protected boolean getBooleanAttribute(String attr) {
-        return getBooleanAttribute(element, attr);
-    }
+    for (int i = 0; i < array.length; i++) array[i] = Integer.parseInt(parts[i]);
 
-    protected static <E extends Enum<E>> E getEnumAttribute(Element element, String attr, Class<E> enumClass) {
-        String value = getAttribute(element, attr);
-        return value == null ? null : Enum.valueOf(enumClass, value.toUpperCase());
-    }
+    return array;
+  }
 
-    protected <E extends Enum<E>> E getEnumAttribute(String attr, Class<E> enumClass) {
-        return getEnumAttribute(element, attr, enumClass);
-    }
-
-    protected static int getIntAttribute(Element element, String attr) {
-        String value = getAttribute(element, attr);
-        return value == null ? 0 : Integer.parseInt(value);
-    }
-
-    protected int getIntAttribute(String attr) {
-        return getIntAttribute(element, attr);
-    }
-
-    protected static long getLongAttribute(Element element, String attr) {
-        String value = getAttribute(element, attr);
-        return value == null ? 0L : Long.parseLong(value);
-    }
-
-    protected long getLongAttribute(String attr) {
-        return getLongAttribute(element, attr);
-    }
-
-    protected static Language getLanguageAttribute(Element element, String attr) {
-        String value = getAttribute(element, attr);
-        return value == null ? null : Language.fromString(value);
-    }
-
-    protected Language getLanguageAttribute(String attr) {
-        return getLanguageAttribute(element, attr);
-    }
-
-    protected static String[] getStringArrayAttribute(Element element, String attr) {
-        String value = getAttribute(element, attr);
-        if (value == null)
-            return null;
-
-        if (value.equalsIgnoreCase("none"))
-            return null;
-
-        String[] array = value.split("[,\\s]+");
-        if (array.length == 0)
-            return null;
-
-        return array;
-    }
-
-    protected String[] getStringArrayAttribute(String attr) {
-        return getStringArrayAttribute(element, attr);
-    }
-
-    protected static int[] getIntArrayAttribute(Element element, String attr) {
-        String[] parts = getStringArrayAttribute(element, attr);
-        if (parts == null)
-            return null;
-
-        int[] array = new int[parts.length];
-
-        for (int i = 0; i < array.length; i++)
-            array[i] = Integer.parseInt(parts[i]);
-
-        return array;
-    }
-
-    protected int[] getIntArrayAttribute(String attr) {
-        return getIntArrayAttribute(element, attr);
-    }
-
+  protected int[] getIntArrayAttribute(String attr) {
+    return getIntArrayAttribute(element, attr);
+  }
 }

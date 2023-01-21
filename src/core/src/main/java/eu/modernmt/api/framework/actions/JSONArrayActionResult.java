@@ -8,18 +8,17 @@ import eu.modernmt.api.framework.RESTRequest;
 
 public class JSONArrayActionResult extends JSONActionResult {
 
-    private JsonArray array;
+  private JsonArray array;
 
-    public JSONArrayActionResult(JsonArray array) {
-        this.array = array;
-    }
+  public JSONArrayActionResult(JsonArray array) {
+    this.array = array;
+  }
 
-    @Override
-    public JsonElement dump(JSONAction action, RESTRequest req, Parameters params) throws JsonParseException {
-        for (int i = 0; i < array.size(); i++)
-            action.decorate(array.get(i));
+  @Override
+  public JsonElement dump(JSONAction action, RESTRequest req, Parameters params)
+      throws JsonParseException {
+    for (int i = 0; i < array.size(); i++) action.decorate(array.get(i));
 
-        return array;
-    }
-
+    return array;
+  }
 }

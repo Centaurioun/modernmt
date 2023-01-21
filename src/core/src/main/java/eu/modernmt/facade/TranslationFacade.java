@@ -25,230 +25,300 @@ import eu.modernmt.model.corpus.impl.parallel.FileCorpus;
 import eu.modernmt.processing.Postprocessor;
 import eu.modernmt.processing.Preprocessor;
 import eu.modernmt.processing.ProcessingException;
-import eu.modernmt.processing.TextProcessor;
-import eu.modernmt.processing.tags.format.InputFormat;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 import java.io.File;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-/**
- * Created by davide on 31/01/17.
- */
+/** Created by davide on 31/01/17. */
 public class TranslationFacade {
 
-    private static final Logger logger = LogManager.getLogger(TranslationFacade.class);
+  private static final Logger logger = LogManager.getLogger(TranslationFacade.class);
 
-    public Set<LanguageDirection> getLanguages() {
-        Engine engine = ModernMT.getNode().getEngine();
-        return engine.getLanguageIndex().getLanguages();
+  public Set<LanguageDirection> getLanguages() {
+    Engine engine = ModernMT.getNode().getEngine();
+    return engine.getLanguageIndex().getLanguages();
+  }
+
+  public LanguageDirection mapLanguage(LanguageDirection pair) {
+    LanguageIndex index = ModernMT.getNode().getEngine().getLanguageIndex();
+
+    LanguageDirection mapped = index.map(pair);
+    if (mapped == null) throw new UnsupportedLanguageException(pair);
+
+    return mapped;
+  }
+
+  // =============================
+  //  Translation
+  // =============================
+
+  public Translation get(
+      UUID user,
+      LanguageDirection direction,
+      Preprocessor.Options preprocessingOptions,
+      String text,
+      Priority priority,
+      long timeout)
+      throws ProcessingException, DecoderException {
+    return get(user, direction, preprocessingOptions, text, null, 0, priority, timeout);
+  }
+
+  public Translation get(
+      UUID user,
+      LanguageDirection direction,
+      Preprocessor.Options preprocessingOptions,
+      String text,
+      ContextVector translationContext,
+      Priority priority,
+      long timeout)
+      throws ProcessingException, DecoderException {
+    return get(
+        user, direction, preprocessingOptions, text, translationContext, 0, priority, timeout);
+  }
+
+  public Translation get(
+      UUID user,
+      LanguageDirection direction,
+      Preprocessor.Options preprocessingOptions,
+      String text,
+      int nbest,
+      Priority priority,
+      long timeout)
+      throws ProcessingException, DecoderException {
+    return get(user, direction, preprocessingOptions, text, null, nbest, priority, timeout);
+  }
+
+  public Translation get(
+      UUID user,
+      LanguageDirection direction,
+      Preprocessor.Options preprocessingOptions,
+      String text,
+      ContextVector translationContext,
+      int nbest,
+      Priority priority,
+      long timeout)
+      throws ProcessingException, DecoderException {
+    LanguageDirection normalizedDirection = mapLanguage(direction);
+    if (nbest > 0) ensureDecoderSupportsNBest();
+
+    Engine engine = ModernMT.getNode().getEngine();
+    Preprocessor preprocessor = engine.getPreprocessor();
+    Postprocessor postprocessor = engine.getPostprocessor();
+
+    // Pre-processing text
+    Sentence sentence = preprocessor.process(normalizedDirection, text, preprocessingOptions);
+
+    // Translating
+    Translation translation;
+    long expirationTimestamp = timeout > 0 ? (System.currentTimeMillis() + timeout) : 0L;
+
+    try {
+      translation =
+          insecureGet(
+              user,
+              normalizedDirection,
+              sentence,
+              translationContext,
+              nbest,
+              priority,
+              expirationTimestamp);
+    } catch (DecoderException | HazelcastException e) {
+      if (e instanceof TranslationTimeoutException) throw e;
+
+      logger.warn("Translation failed, retry after delay", e);
+
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e1) {
+        // Ignore it
+      }
+
+      translation =
+          insecureGet(
+              user,
+              normalizedDirection,
+              sentence,
+              translationContext,
+              nbest,
+              priority,
+              expirationTimestamp);
     }
 
-    public LanguageDirection mapLanguage(LanguageDirection pair) {
-        LanguageIndex index = ModernMT.getNode().getEngine().getLanguageIndex();
+    // Post-processing translation
+    Postprocessor.Options postprocessingOptions =
+        new Postprocessor.Options(direction.source, direction.target);
+    postprocessor.process(normalizedDirection, translation, postprocessingOptions);
 
-        LanguageDirection mapped = index.map(pair);
-        if (mapped == null)
-            throw new UnsupportedLanguageException(pair);
-
-        return mapped;
+    if (translation.hasNbest()) {
+      for (Translation hypothesis : translation.getNbest())
+        postprocessor.process(normalizedDirection, hypothesis, postprocessingOptions);
     }
 
-    // =============================
-    //  Translation
-    // =============================
+    return translation;
+  }
 
-    public Translation get(UUID user, LanguageDirection direction, Preprocessor.Options preprocessingOptions, String text, Priority priority, long timeout) throws ProcessingException, DecoderException {
-        return get(user, direction, preprocessingOptions, text, null, 0, priority, timeout);
+  private Translation insecureGet(
+      UUID user,
+      LanguageDirection direction,
+      Sentence sentence,
+      ContextVector context,
+      int nbest,
+      Priority priority,
+      long expirationTimestamp)
+      throws DecoderException {
+    if (expirationTimestamp > 0 && expirationTimestamp < System.currentTimeMillis())
+      throw new TranslationTimeoutException();
+
+    if (!sentence.hasWords()) return Translation.emptyTranslation(sentence);
+
+    try {
+      ClusterNode node = ModernMT.getNode();
+
+      TranslationTask task =
+          new TranslationTaskImpl(
+              priority, user, direction, sentence, context, nbest, expirationTimestamp);
+      Future<Translation> future = node.submit(task);
+      return future.get();
+    } catch (InterruptedException e) {
+      throw new SystemShutdownException(e);
+    } catch (ExecutionException e) {
+      Throwable cause = e.getCause();
+
+      if (cause instanceof DecoderException) throw (DecoderException) cause;
+      else if (cause instanceof RejectedExecutionException)
+        throw new SystemShutdownException(cause);
+      else if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+      else throw new Error("Unexpected exception thrown: " + cause.getMessage(), cause);
+    }
+  }
+
+  // =============================
+  //  Context Vector
+  // =============================
+
+  public ContextVector getContextVector(
+      UUID user, LanguageDirection direction, File context, int limit)
+      throws ContextAnalyzerException {
+    direction = mapLanguage(direction);
+    return getContextVector(
+        user, direction, new FileCorpus(context, null, direction.source), limit);
+  }
+
+  public ContextVector getContextVector(
+      UUID user, LanguageDirection direction, String context, int limit)
+      throws ContextAnalyzerException {
+    direction = mapLanguage(direction);
+    return getContextVector(
+        user, direction, new StringCorpus(null, direction.source, context), limit);
+  }
+
+  private ContextVector getContextVector(
+      UUID user, LanguageDirection direction, Corpus context, int limit)
+      throws ContextAnalyzerException {
+    Engine engine = ModernMT.getNode().getEngine();
+    ContextAnalyzer analyzer = engine.getContextAnalyzer();
+
+    return analyzer.getContextVector(user, direction, context, limit);
+  }
+
+  public Map<Language, ContextVector> getContextVectors(
+      UUID user, File context, int limit, Language source, Language... targets)
+      throws ContextAnalyzerException {
+    return getContextVectors(user, new FileCorpus(context, null, source), limit, source, targets);
+  }
+
+  public Map<Language, ContextVector> getContextVectors(
+      UUID user, String context, int limit, Language source, Language... targets)
+      throws ContextAnalyzerException {
+    return getContextVectors(user, new StringCorpus(null, source, context), limit, source, targets);
+  }
+
+  private Map<Language, ContextVector> getContextVectors(
+      UUID user, Corpus context, int limit, Language source, Language... targets)
+      throws ContextAnalyzerException {
+    Engine engine = ModernMT.getNode().getEngine();
+    ContextAnalyzer analyzer = engine.getContextAnalyzer();
+
+    HashMap<Language, ContextVector> result = new HashMap<>(targets.length);
+    for (Language target : targets) {
+      try {
+        LanguageDirection direction = mapLanguage(new LanguageDirection(source, target));
+        ContextVector contextVector = analyzer.getContextVector(user, direction, context, limit);
+        result.put(target, contextVector);
+      } catch (UnsupportedLanguageException e) {
+        // ignore it
+      }
     }
 
-    public Translation get(UUID user, LanguageDirection direction, Preprocessor.Options preprocessingOptions, String text, ContextVector translationContext, Priority priority, long timeout) throws ProcessingException, DecoderException {
-        return get(user, direction, preprocessingOptions, text, translationContext, 0, priority, timeout);
+    return result;
+  }
+
+  // -----------------------------
+  //  Util functions
+  // -----------------------------
+
+  private void ensureDecoderSupportsNBest() {
+    Decoder decoder = ModernMT.getNode().getEngine().getDecoder();
+    if (!(decoder instanceof DecoderWithNBest))
+      throw new UnsupportedOperationException(
+          "Decoder '" + decoder.getClass().getSimpleName() + "' does not support N-best.");
+  }
+
+  // -----------------------------
+  //  Translation task
+  // -----------------------------
+
+  private static class TranslationTaskImpl implements TranslationTask {
+
+    private final Priority priority;
+    private final UUID user;
+    private final LanguageDirection direction;
+    private final Sentence sentence;
+    private final ContextVector context;
+    private final int nbest;
+
+    private final long expirationTimestamp;
+
+    TranslationTaskImpl(
+        Priority priority,
+        UUID user,
+        LanguageDirection direction,
+        Sentence sentence,
+        ContextVector context,
+        int nbest,
+        long expirationTimestamp) {
+      this.priority = priority;
+      this.user = user;
+      this.direction = direction;
+      this.sentence = sentence;
+      this.context = context;
+      this.nbest = nbest;
+      this.expirationTimestamp = expirationTimestamp;
     }
 
-    public Translation get(UUID user, LanguageDirection direction, Preprocessor.Options preprocessingOptions, String text, int nbest, Priority priority, long timeout) throws ProcessingException, DecoderException {
-        return get(user, direction, preprocessingOptions, text, null, nbest, priority, timeout);
+    @Override
+    public LanguageDirection getLanguageDirection() {
+      return direction;
     }
 
-    public Translation get(UUID user, LanguageDirection direction, Preprocessor.Options preprocessingOptions, String text, ContextVector translationContext, int nbest, Priority priority, long timeout) throws ProcessingException, DecoderException {
-        LanguageDirection normalizedDirection = mapLanguage(direction);
-        if (nbest > 0)
-            ensureDecoderSupportsNBest();
+    @Override
+    public Translation call() throws DecoderException {
+      if (expirationTimestamp > 0 && expirationTimestamp < System.currentTimeMillis())
+        throw new TranslationTimeoutException();
 
-        Engine engine = ModernMT.getNode().getEngine();
-        Preprocessor preprocessor = engine.getPreprocessor();
-        Postprocessor postprocessor = engine.getPostprocessor();
+      Decoder decoder = ModernMT.getNode().getEngine().getDecoder();
 
-        // Pre-processing text
-        Sentence sentence = preprocessor.process(normalizedDirection, text, preprocessingOptions);
-
-        // Translating
-        Translation translation;
-        long expirationTimestamp = timeout > 0 ? (System.currentTimeMillis() + timeout) : 0L;
-
-        try {
-            translation = insecureGet(user, normalizedDirection, sentence, translationContext, nbest, priority, expirationTimestamp);
-        } catch (DecoderException | HazelcastException e) {
-            if (e instanceof TranslationTimeoutException)
-                throw e;
-
-            logger.warn("Translation failed, retry after delay", e);
-
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e1) {
-                // Ignore it
-            }
-
-            translation = insecureGet(user, normalizedDirection, sentence, translationContext, nbest, priority, expirationTimestamp);
-        }
-
-        // Post-processing translation
-        Postprocessor.Options postprocessingOptions = new Postprocessor.Options(direction.source, direction.target);
-        postprocessor.process(normalizedDirection, translation, postprocessingOptions);
-
-        if (translation.hasNbest()) {
-            for (Translation hypothesis : translation.getNbest())
-                postprocessor.process(normalizedDirection, hypothesis, postprocessingOptions);
-        }
-
-        return translation;
+      if (nbest > 0) {
+        DecoderWithNBest nBestDecoder = (DecoderWithNBest) decoder;
+        return nBestDecoder.translate(
+            priority, user, direction, sentence, context, nbest, expirationTimestamp);
+      } else {
+        return decoder.translate(priority, user, direction, sentence, context, expirationTimestamp);
+      }
     }
-
-    private Translation insecureGet(UUID user, LanguageDirection direction, Sentence sentence, ContextVector context, int nbest, Priority priority, long expirationTimestamp) throws DecoderException {
-        if (expirationTimestamp > 0 && expirationTimestamp < System.currentTimeMillis())
-            throw new TranslationTimeoutException();
-
-        if (!sentence.hasWords())
-            return Translation.emptyTranslation(sentence);
-
-        try {
-            ClusterNode node = ModernMT.getNode();
-
-            TranslationTask task = new TranslationTaskImpl(priority, user, direction, sentence, context, nbest, expirationTimestamp);
-            Future<Translation> future = node.submit(task);
-            return future.get();
-        } catch (InterruptedException e) {
-            throw new SystemShutdownException(e);
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-
-            if (cause instanceof DecoderException)
-                throw (DecoderException) cause;
-            else if (cause instanceof RejectedExecutionException)
-                throw new SystemShutdownException(cause);
-            else if (cause instanceof RuntimeException)
-                throw (RuntimeException) cause;
-            else
-                throw new Error("Unexpected exception thrown: " + cause.getMessage(), cause);
-        }
-    }
-
-    // =============================
-    //  Context Vector
-    // =============================
-
-    public ContextVector getContextVector(UUID user, LanguageDirection direction, File context, int limit) throws ContextAnalyzerException {
-        direction = mapLanguage(direction);
-        return getContextVector(user, direction, new FileCorpus(context, null, direction.source), limit);
-    }
-
-    public ContextVector getContextVector(UUID user, LanguageDirection direction, String context, int limit) throws ContextAnalyzerException {
-        direction = mapLanguage(direction);
-        return getContextVector(user, direction, new StringCorpus(null, direction.source, context), limit);
-    }
-
-    private ContextVector getContextVector(UUID user, LanguageDirection direction, Corpus context, int limit) throws ContextAnalyzerException {
-        Engine engine = ModernMT.getNode().getEngine();
-        ContextAnalyzer analyzer = engine.getContextAnalyzer();
-
-        return analyzer.getContextVector(user, direction, context, limit);
-    }
-
-    public Map<Language, ContextVector> getContextVectors(UUID user, File context, int limit, Language source, Language... targets) throws ContextAnalyzerException {
-        return getContextVectors(user, new FileCorpus(context, null, source), limit, source, targets);
-    }
-
-    public Map<Language, ContextVector> getContextVectors(UUID user, String context, int limit, Language source, Language... targets) throws ContextAnalyzerException {
-        return getContextVectors(user, new StringCorpus(null, source, context), limit, source, targets);
-    }
-
-    private Map<Language, ContextVector> getContextVectors(UUID user, Corpus context, int limit, Language source, Language... targets) throws ContextAnalyzerException {
-        Engine engine = ModernMT.getNode().getEngine();
-        ContextAnalyzer analyzer = engine.getContextAnalyzer();
-
-        HashMap<Language, ContextVector> result = new HashMap<>(targets.length);
-        for (Language target : targets) {
-            try {
-                LanguageDirection direction = mapLanguage(new LanguageDirection(source, target));
-                ContextVector contextVector = analyzer.getContextVector(user, direction, context, limit);
-                result.put(target, contextVector);
-            } catch (UnsupportedLanguageException e) {
-                // ignore it
-            }
-        }
-
-        return result;
-    }
-
-    // -----------------------------
-    //  Util functions
-    // -----------------------------
-
-    private void ensureDecoderSupportsNBest() {
-        Decoder decoder = ModernMT.getNode().getEngine().getDecoder();
-        if (!(decoder instanceof DecoderWithNBest))
-            throw new UnsupportedOperationException("Decoder '" + decoder.getClass().getSimpleName() + "' does not support N-best.");
-    }
-
-    // -----------------------------
-    //  Translation task
-    // -----------------------------
-
-    private static class TranslationTaskImpl implements TranslationTask {
-
-        private final Priority priority;
-        private final UUID user;
-        private final LanguageDirection direction;
-        private final Sentence sentence;
-        private final ContextVector context;
-        private final int nbest;
-
-        private final long expirationTimestamp;
-
-        TranslationTaskImpl(Priority priority, UUID user, LanguageDirection direction, Sentence sentence, ContextVector context, int nbest, long expirationTimestamp) {
-            this.priority = priority;
-            this.user = user;
-            this.direction = direction;
-            this.sentence = sentence;
-            this.context = context;
-            this.nbest = nbest;
-            this.expirationTimestamp = expirationTimestamp;
-        }
-
-        @Override
-        public LanguageDirection getLanguageDirection() {
-            return direction;
-        }
-
-        @Override
-        public Translation call() throws DecoderException {
-            if (expirationTimestamp > 0 && expirationTimestamp < System.currentTimeMillis())
-                throw new TranslationTimeoutException();
-
-            Decoder decoder = ModernMT.getNode().getEngine().getDecoder();
-
-            if (nbest > 0) {
-                DecoderWithNBest nBestDecoder = (DecoderWithNBest) decoder;
-                return nBestDecoder.translate(priority, user, direction, sentence, context, nbest, expirationTimestamp);
-            } else {
-                return decoder.translate(priority, user, direction, sentence, context, expirationTimestamp);
-            }
-        }
-
-    }
+  }
 }

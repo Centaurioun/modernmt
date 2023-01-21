@@ -8,15 +8,16 @@ import eu.modernmt.api.framework.RESTRequest;
 
 public class JSONObjectActionResult extends JSONActionResult {
 
-    private JsonObject object;
+  private JsonObject object;
 
-    public JSONObjectActionResult(JsonObject object) {
-        this.object = object;
-    }
+  public JSONObjectActionResult(JsonObject object) {
+    this.object = object;
+  }
 
-    @Override
-    public JsonElement dump(JSONAction action, RESTRequest req, Parameters params) throws JsonParseException {
-        action.decorate(object);
-        return object;
-    }
+  @Override
+  public JsonElement dump(JSONAction action, RESTRequest req, Parameters params)
+      throws JsonParseException {
+    action.decorate(object);
+    return object;
+  }
 }

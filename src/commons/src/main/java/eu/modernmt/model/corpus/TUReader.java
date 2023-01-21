@@ -5,6 +5,5 @@ import java.io.IOException;
 
 public interface TUReader extends Closeable {
 
-    TranslationUnit read() throws IOException;
-
+  TranslationUnit read() throws IOException;
 }

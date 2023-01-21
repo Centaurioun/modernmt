@@ -6,12 +6,11 @@ import eu.modernmt.api.framework.RESTRequest;
 
 public abstract class JSONObjectAction extends JSONAction {
 
-    @Override
-    protected final JSONActionResult getResult(RESTRequest req, Parameters params) throws Throwable {
-        JsonObject json = execute(req, params);
-        return json == null ? null : new JSONObjectActionResult(json);
-    }
+  @Override
+  protected final JSONActionResult getResult(RESTRequest req, Parameters params) throws Throwable {
+    JsonObject json = execute(req, params);
+    return json == null ? null : new JSONObjectActionResult(json);
+  }
 
-    protected abstract JsonObject execute(RESTRequest req, Parameters params) throws Throwable;
-
+  protected abstract JsonObject execute(RESTRequest req, Parameters params) throws Throwable;
 }

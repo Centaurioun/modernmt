@@ -4,19 +4,18 @@ import eu.modernmt.lang.Language;
 
 public interface CorpusFilter {
 
-    interface Initializer {
+  interface Initializer {
 
-        void onBegin();
+    void onBegin();
 
-        void onLine(Language language, String line, int index);
+    void onLine(Language language, String line, int index);
 
-        void onEnd();
-    }
+    void onEnd();
+  }
 
-    Initializer getInitializer();
+  Initializer getInitializer();
 
-    boolean accept(Language language, String line, int index);
+  boolean accept(Language language, String line, int index);
 
-    void clear();
-
+  void clear();
 }

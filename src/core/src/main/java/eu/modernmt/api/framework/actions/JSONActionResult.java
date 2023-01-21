@@ -7,10 +7,10 @@ import eu.modernmt.api.framework.RESTRequest;
 
 public abstract class JSONActionResult {
 
-    public void beforeDump(RESTRequest req, Parameters params) throws Throwable {
-        // Default implementation does nothing
-    }
+  public void beforeDump(RESTRequest req, Parameters params) throws Throwable {
+    // Default implementation does nothing
+  }
 
-    public abstract JsonElement dump(JSONAction action, RESTRequest req, Parameters params) throws JsonParseException;
-
+  public abstract JsonElement dump(JSONAction action, RESTRequest req, Parameters params)
+      throws JsonParseException;
 }

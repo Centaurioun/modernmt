@@ -1,46 +1,42 @@
 package eu.modernmt.model.corpus;
 
 import eu.modernmt.io.LineReader;
+import java.io.IOException;
 import org.apache.commons.io.IOUtils;
 
-import java.io.IOException;
-
-/**
- * Created by davide on 31/07/17.
- */
+/** Created by davide on 31/07/17. */
 public abstract class BaseCorpus implements Corpus {
 
-    private int lineCount = -1;
+  private int lineCount = -1;
 
-    @Override
-    public int getLineCount() {
-        if (lineCount < 0) {
-            synchronized (this) {
-                if (lineCount < 0)
-                    try {
-                        lineCount = countLines();
-                    } catch (IOException e) {
-                        lineCount = 0;
-                    }
-            }
-        }
-
-        return lineCount;
+  @Override
+  public int getLineCount() {
+    if (lineCount < 0) {
+      synchronized (this) {
+        if (lineCount < 0)
+          try {
+            lineCount = countLines();
+          } catch (IOException e) {
+            lineCount = 0;
+          }
+      }
     }
 
-    private int countLines() throws IOException {
-        int count = 0;
+    return lineCount;
+  }
 
-        LineReader reader = null;
+  private int countLines() throws IOException {
+    int count = 0;
 
-        try {
-            reader = getContentReader();
-            while (reader.readLine() != null) count++;
-        } finally {
-            IOUtils.closeQuietly(reader);
-        }
+    LineReader reader = null;
 
-        return count;
+    try {
+      reader = getContentReader();
+      while (reader.readLine() != null) count++;
+    } finally {
+      IOUtils.closeQuietly(reader);
     }
 
+    return count;
+  }
 }

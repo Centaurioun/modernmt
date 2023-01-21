@@ -5,6 +5,5 @@ import java.util.Set;
 
 public interface RetentionPolicy {
 
-    Set<BackupFile> retain(List<BackupFile> backups);
-
+  Set<BackupFile> retain(List<BackupFile> backups);
 }

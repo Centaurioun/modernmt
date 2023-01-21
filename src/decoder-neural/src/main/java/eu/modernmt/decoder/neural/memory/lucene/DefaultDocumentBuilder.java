@@ -8,6 +8,9 @@ import eu.modernmt.lang.Language;
 import eu.modernmt.lang.LanguageDirection;
 import eu.modernmt.memory.ScoreEntry;
 import eu.modernmt.memory.TranslationMemory;
+import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
@@ -15,253 +18,278 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.apache.lucene.util.NumericUtils;
 
-import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Map;
-
-/**
- * Created by davide on 23/05/17.
- */
+/** Created by davide on 23/05/17. */
 public class DefaultDocumentBuilder implements DocumentBuilder {
 
-    private static final String CHANNELS_FIELD = "channels";
-    private static final String TUID_FIELD = "tuid";
-    private static final String MEMORY_FIELD = "memory";
-    private static final String HASH_FIELD = "hash";
-    private static final String TUID_HASH_FIELD = "hash_tuid";
-    private static final String LANGUAGE_PREFIX_FIELD = "lang_";
-    private static final String CONTENT_PREFIX_FIELD = "content_";
+  private static final String CHANNELS_FIELD = "channels";
+  private static final String TUID_FIELD = "tuid";
+  private static final String MEMORY_FIELD = "memory";
+  private static final String HASH_FIELD = "hash";
+  private static final String TUID_HASH_FIELD = "hash_tuid";
+  private static final String LANGUAGE_PREFIX_FIELD = "lang_";
+  private static final String CONTENT_PREFIX_FIELD = "content_";
 
-    private static final String SOURCE_LANGUAGE_FIELD = "src_lang";
-    private static final String TARGET_LANGUAGE_FIELD = "tgt_lang";
-    private static final String SENTENCE_FIELD = "sentence";
-    private static final String TRANSLATION_FIELD = "translation";
+  private static final String SOURCE_LANGUAGE_FIELD = "src_lang";
+  private static final String TARGET_LANGUAGE_FIELD = "tgt_lang";
+  private static final String SENTENCE_FIELD = "sentence";
+  private static final String TRANSLATION_FIELD = "translation";
 
-    // Factory methods
+  // Factory methods
 
-    @Override
-    public Document create(TranslationUnitMessage unit) {
-        String hash = HashGenerator.hash(unit.value);
-        return create(unit, hash);
+  @Override
+  public Document create(TranslationUnitMessage unit) {
+    String hash = HashGenerator.hash(unit.value);
+    return create(unit, hash);
+  }
+
+  @Override
+  public Document create(TranslationUnitMessage unit, String hash) {
+    String tuidHash =
+        unit.value.tuid == null ? null : HashGenerator.hash(unit.value.language, unit.value.tuid);
+    String sentence = TokensOutputStream.serialize(unit.sentence, false, true);
+    String translation = TokensOutputStream.serialize(unit.translation, false, true);
+
+    return create(
+        unit.memory,
+        unit.value.tuid,
+        tuidHash,
+        unit.language,
+        sentence,
+        translation,
+        hash,
+        unit.value.language,
+        unit.value.source,
+        unit.value.target);
+  }
+
+  protected Document create(
+      long memory,
+      String tuid,
+      String tuidHash,
+      LanguageDirection language,
+      String sentence,
+      String translation,
+      String hash,
+      LanguageDirection rawLanguage,
+      String rawSentence,
+      String rawTranslation) {
+    Document document = new Document();
+    document.add(new LongField(MEMORY_FIELD, memory, Field.Store.YES));
+    document.add(new HashField(HASH_FIELD, hash, Field.Store.NO));
+
+    document.add(
+        new StringField(
+            makeLanguageFieldName(language.source),
+            language.source.toLanguageTag(),
+            Field.Store.YES));
+    document.add(
+        new StringField(
+            makeLanguageFieldName(language.target),
+            language.target.toLanguageTag(),
+            Field.Store.YES));
+    document.add(new TextField(makeContentFieldName(language), sentence, Field.Store.YES));
+    document.add(
+        new TextField(makeContentFieldName(language.reversed()), translation, Field.Store.YES));
+
+    document.add(new StoredField(SOURCE_LANGUAGE_FIELD, rawLanguage.source.toLanguageTag()));
+    document.add(new StoredField(TARGET_LANGUAGE_FIELD, rawLanguage.target.toLanguageTag()));
+    document.add(new StoredField(SENTENCE_FIELD, rawSentence.getBytes(UTF8Charset.get())));
+    document.add(new StoredField(TRANSLATION_FIELD, rawTranslation.getBytes(UTF8Charset.get())));
+
+    if (tuid != null) {
+      document.add(new HashField(TUID_HASH_FIELD, tuidHash, Field.Store.NO));
+      document.add(new StoredField(TUID_FIELD, tuid));
     }
 
-    @Override
-    public Document create(TranslationUnitMessage unit, String hash) {
-        String tuidHash = unit.value.tuid == null ? null : HashGenerator.hash(unit.value.language, unit.value.tuid);
-        String sentence = TokensOutputStream.serialize(unit.sentence, false, true);
-        String translation = TokensOutputStream.serialize(unit.translation, false, true);
+    return document;
+  }
 
-        return create(unit.memory, unit.value.tuid, tuidHash, unit.language, sentence, translation, hash,
-                unit.value.language, unit.value.source, unit.value.target);
+  @Override
+  public Document create(Map<Short, Long> channels) {
+    ByteBuffer buffer = ByteBuffer.allocate(10 * channels.size());
+    for (Map.Entry<Short, Long> entry : channels.entrySet()) {
+      buffer.putShort(entry.getKey());
+      buffer.putLong(entry.getValue());
     }
 
-    protected Document create(long memory, String tuid, String tuidHash, LanguageDirection language, String sentence, String translation, String hash,
-                              LanguageDirection rawLanguage, String rawSentence, String rawTranslation) {
-        Document document = new Document();
-        document.add(new LongField(MEMORY_FIELD, memory, Field.Store.YES));
-        document.add(new HashField(HASH_FIELD, hash, Field.Store.NO));
+    Document document = new Document();
+    document.add(new LongField(MEMORY_FIELD, 0, Field.Store.YES));
+    document.add(new StoredField(CHANNELS_FIELD, buffer.array()));
 
-        document.add(new StringField(makeLanguageFieldName(language.source), language.source.toLanguageTag(), Field.Store.YES));
-        document.add(new StringField(makeLanguageFieldName(language.target), language.target.toLanguageTag(), Field.Store.YES));
-        document.add(new TextField(makeContentFieldName(language), sentence, Field.Store.YES));
-        document.add(new TextField(makeContentFieldName(language.reversed()), translation, Field.Store.YES));
+    return document;
+  }
 
-        document.add(new StoredField(SOURCE_LANGUAGE_FIELD, rawLanguage.source.toLanguageTag()));
-        document.add(new StoredField(TARGET_LANGUAGE_FIELD, rawLanguage.target.toLanguageTag()));
-        document.add(new StoredField(SENTENCE_FIELD, rawSentence.getBytes(UTF8Charset.get())));
-        document.add(new StoredField(TRANSLATION_FIELD, rawTranslation.getBytes(UTF8Charset.get())));
+  // Getters
 
-        if (tuid != null) {
-            document.add(new HashField(TUID_HASH_FIELD, tuidHash, Field.Store.NO));
-            document.add(new StoredField(TUID_FIELD, tuid));
+  @Override
+  public long getMemory(Document self) {
+    return Long.parseLong(self.get(MEMORY_FIELD));
+  }
+
+  @Override
+  public String getSourceLanguage(String fieldName) {
+    if (!fieldName.startsWith(CONTENT_PREFIX_FIELD))
+      throw new IllegalArgumentException("Unexpected field name: " + fieldName);
+
+    int lastUnderscore = fieldName.lastIndexOf('_');
+    return fieldName.substring(CONTENT_PREFIX_FIELD.length(), lastUnderscore);
+  }
+
+  @Override
+  public String getTargetLanguage(String fieldName) {
+    if (!fieldName.startsWith(CONTENT_PREFIX_FIELD))
+      throw new IllegalArgumentException("Unexpected field name: " + fieldName);
+
+    int lastUnderscore = fieldName.lastIndexOf('_');
+
+    return fieldName.substring(lastUnderscore + 1);
+  }
+
+  // Parsing
+
+  @Override
+  public ScoreEntry asScoreEntry(Document self) {
+    Language source = null;
+    Language target = null;
+
+    for (IndexableField field : self.getFields()) {
+      String name = field.name();
+
+      if (name.startsWith(LANGUAGE_PREFIX_FIELD)) {
+        Language l = Language.fromString(name.substring(LANGUAGE_PREFIX_FIELD.length()));
+
+        if (source == null) {
+          source = l;
+        } else {
+          target = l;
+          break;
         }
-
-        return document;
+      }
     }
 
-    @Override
-    public Document create(Map<Short, Long> channels) {
-        ByteBuffer buffer = ByteBuffer.allocate(10 * channels.size());
-        for (Map.Entry<Short, Long> entry : channels.entrySet()) {
-            buffer.putShort(entry.getKey());
-            buffer.putLong(entry.getValue());
-        }
+    if (source == null || target == null)
+      throw new IllegalArgumentException("Invalid document: missing language info.");
 
-        Document document = new Document();
-        document.add(new LongField(MEMORY_FIELD, 0, Field.Store.YES));
-        document.add(new StoredField(CHANNELS_FIELD, buffer.array()));
+    LanguageDirection language;
+    if (source.toLanguageTag().compareTo(target.toLanguageTag()) < 0)
+      language = new LanguageDirection(source, target);
+    else language = new LanguageDirection(target, source);
 
-        return document;
+    return asScoreEntry(self, language);
+  }
+
+  @Override
+  public ScoreEntry asScoreEntry(Document self, LanguageDirection direction) {
+    long memory = Long.parseLong(self.get(MEMORY_FIELD));
+    String[] sentenceTokens =
+        TokensOutputStream.deserialize(self.get(makeContentFieldName(direction)));
+    String[] translationTokens =
+        TokensOutputStream.deserialize(self.get(makeContentFieldName(direction.reversed())));
+
+    String _source = self.get(makeLanguageFieldName(direction.source));
+    String _target = self.get(makeLanguageFieldName(direction.target));
+
+    boolean differ = false;
+    Language source = direction.source;
+    Language target = direction.target;
+
+    if (!_source.equals(direction.source.toLanguageTag())) {
+      source = Language.fromString(_source);
+      differ = true;
     }
 
-    // Getters
-
-    @Override
-    public long getMemory(Document self) {
-        return Long.parseLong(self.get(MEMORY_FIELD));
+    if (!_target.equals(direction.target.toLanguageTag())) {
+      target = Language.fromString(_target);
+      differ = true;
     }
 
-    @Override
-    public String getSourceLanguage(String fieldName) {
-        if (!fieldName.startsWith(CONTENT_PREFIX_FIELD))
-            throw new IllegalArgumentException("Unexpected field name: " + fieldName);
+    if (differ) direction = new LanguageDirection(source, target);
 
-        int lastUnderscore = fieldName.lastIndexOf('_');
-        return fieldName.substring(CONTENT_PREFIX_FIELD.length(), lastUnderscore);
+    return new ScoreEntry(memory, direction, sentenceTokens, translationTokens);
+  }
+
+  @Override
+  public TranslationMemory.Entry asEntry(Document self) {
+    long memory = Long.parseLong(self.get(MEMORY_FIELD));
+    Language source = Language.fromString(self.get(SOURCE_LANGUAGE_FIELD));
+    Language target = Language.fromString(self.get(TARGET_LANGUAGE_FIELD));
+    String sentence = self.getBinaryValue(SENTENCE_FIELD).utf8ToString();
+    String translation = self.getBinaryValue(TRANSLATION_FIELD).utf8ToString();
+    String tuid = self.get(TUID_FIELD);
+
+    return new TranslationMemory.Entry(
+        tuid, memory, new LanguageDirection(source, target), sentence, translation);
+  }
+
+  @Override
+  public Map<Short, Long> asChannels(Document self) {
+    HashMap<Short, Long> result = new HashMap<>();
+
+    BytesRef value = self.getBinaryValue(CHANNELS_FIELD);
+    ByteBuffer buffer = ByteBuffer.wrap(value.bytes);
+
+    while (buffer.hasRemaining()) {
+      short channel = buffer.getShort();
+      long position = buffer.getLong();
+      result.put(channel, position);
     }
 
-    @Override
-    public String getTargetLanguage(String fieldName) {
-        if (!fieldName.startsWith(CONTENT_PREFIX_FIELD))
-            throw new IllegalArgumentException("Unexpected field name: " + fieldName);
+    return result;
+  }
 
-        int lastUnderscore = fieldName.lastIndexOf('_');
+  // Term constructors
 
-        return fieldName.substring(lastUnderscore + 1);
-    }
+  @Override
+  public Term makeHashTerm(String h) {
+    return new Term(HASH_FIELD, h);
+  }
 
-    // Parsing
+  @Override
+  public Term makeTuidHashTerm(String h) {
+    return new Term(TUID_HASH_FIELD, h);
+  }
 
-    @Override
-    public ScoreEntry asScoreEntry(Document self) {
-        Language source = null;
-        Language target = null;
+  @Override
+  public Term makeMemoryTerm(long memory) {
+    return makeLongTerm(memory, MEMORY_FIELD);
+  }
 
-        for (IndexableField field : self.getFields()) {
-            String name = field.name();
+  @Override
+  public Term makeChannelsTerm() {
+    return makeMemoryTerm(0L);
+  }
 
-            if (name.startsWith(LANGUAGE_PREFIX_FIELD)) {
-                Language l = Language.fromString(name.substring(LANGUAGE_PREFIX_FIELD.length()));
+  @Override
+  public Term makeLanguageTerm(Language language) {
+    return new Term(makeLanguageFieldName(language), language.toLanguageTag());
+  }
 
-                if (source == null) {
-                    source = l;
-                } else {
-                    target = l;
-                    break;
-                }
-            }
-        }
+  // Fields builders
 
-        if (source == null || target == null)
-            throw new IllegalArgumentException("Invalid document: missing language info.");
+  @Override
+  public boolean isHashField(String field) {
+    return HASH_FIELD.equals(field) || TUID_HASH_FIELD.equals(field);
+  }
 
-        LanguageDirection language;
-        if (source.toLanguageTag().compareTo(target.toLanguageTag()) < 0)
-            language = new LanguageDirection(source, target);
-        else
-            language = new LanguageDirection(target, source);
+  @Override
+  public String makeLanguageFieldName(Language language) {
+    return LANGUAGE_PREFIX_FIELD + language.getLanguage();
+  }
 
-        return asScoreEntry(self, language);
-    }
+  @Override
+  public String makeContentFieldName(LanguageDirection direction) {
+    return CONTENT_PREFIX_FIELD
+        + direction.source.getLanguage()
+        + '_'
+        + direction.target.getLanguage();
+  }
 
-    @Override
-    public ScoreEntry asScoreEntry(Document self, LanguageDirection direction) {
-        long memory = Long.parseLong(self.get(MEMORY_FIELD));
-        String[] sentenceTokens = TokensOutputStream.deserialize(self.get(makeContentFieldName(direction)));
-        String[] translationTokens = TokensOutputStream.deserialize(self.get(makeContentFieldName(direction.reversed())));
+  // Utils
 
-        String _source = self.get(makeLanguageFieldName(direction.source));
-        String _target = self.get(makeLanguageFieldName(direction.target));
+  private static Term makeLongTerm(long value, String field) {
+    BytesRefBuilder builder = new BytesRefBuilder();
+    NumericUtils.longToPrefixCoded(value, 0, builder);
 
-        boolean differ = false;
-        Language source = direction.source;
-        Language target = direction.target;
-
-        if (!_source.equals(direction.source.toLanguageTag())) {
-            source = Language.fromString(_source);
-            differ = true;
-        }
-
-        if (!_target.equals(direction.target.toLanguageTag())) {
-            target = Language.fromString(_target);
-            differ = true;
-        }
-
-        if (differ)
-            direction = new LanguageDirection(source, target);
-
-        return new ScoreEntry(memory, direction, sentenceTokens, translationTokens);
-    }
-
-    @Override
-    public TranslationMemory.Entry asEntry(Document self) {
-        long memory = Long.parseLong(self.get(MEMORY_FIELD));
-        Language source = Language.fromString(self.get(SOURCE_LANGUAGE_FIELD));
-        Language target = Language.fromString(self.get(TARGET_LANGUAGE_FIELD));
-        String sentence = self.getBinaryValue(SENTENCE_FIELD).utf8ToString();
-        String translation = self.getBinaryValue(TRANSLATION_FIELD).utf8ToString();
-        String tuid = self.get(TUID_FIELD);
-
-        return new TranslationMemory.Entry(tuid, memory, new LanguageDirection(source, target), sentence, translation);
-    }
-
-    @Override
-    public Map<Short, Long> asChannels(Document self) {
-        HashMap<Short, Long> result = new HashMap<>();
-
-        BytesRef value = self.getBinaryValue(CHANNELS_FIELD);
-        ByteBuffer buffer = ByteBuffer.wrap(value.bytes);
-
-        while (buffer.hasRemaining()) {
-            short channel = buffer.getShort();
-            long position = buffer.getLong();
-            result.put(channel, position);
-        }
-
-        return result;
-    }
-
-    // Term constructors
-
-    @Override
-    public Term makeHashTerm(String h) {
-        return new Term(HASH_FIELD, h);
-    }
-
-    @Override
-    public Term makeTuidHashTerm(String h) {
-        return new Term(TUID_HASH_FIELD, h);
-    }
-
-    @Override
-    public Term makeMemoryTerm(long memory) {
-        return makeLongTerm(memory, MEMORY_FIELD);
-    }
-
-    @Override
-    public Term makeChannelsTerm() {
-        return makeMemoryTerm(0L);
-    }
-
-    @Override
-    public Term makeLanguageTerm(Language language) {
-        return new Term(makeLanguageFieldName(language), language.toLanguageTag());
-    }
-
-    // Fields builders
-
-    @Override
-    public boolean isHashField(String field) {
-        return HASH_FIELD.equals(field) || TUID_HASH_FIELD.equals(field);
-    }
-
-    @Override
-    public String makeLanguageFieldName(Language language) {
-        return LANGUAGE_PREFIX_FIELD + language.getLanguage();
-    }
-
-    @Override
-    public String makeContentFieldName(LanguageDirection direction) {
-        return CONTENT_PREFIX_FIELD + direction.source.getLanguage() + '_' + direction.target.getLanguage();
-    }
-
-    // Utils
-
-    private static Term makeLongTerm(long value, String field) {
-        BytesRefBuilder builder = new BytesRefBuilder();
-        NumericUtils.longToPrefixCoded(value, 0, builder);
-
-        return new Term(field, builder.toBytesRef());
-    }
-
+    return new Term(field, builder.toBytesRef());
+  }
 }

@@ -1,196 +1,212 @@
 package eu.modernmt.facade;
 
 import eu.modernmt.cleaning.CorporaCleaning;
+import eu.modernmt.cleaning.dedup.CorporaBloomFilter;
 import eu.modernmt.io.Corpora;
 import eu.modernmt.lang.LanguageDirection;
 import eu.modernmt.model.corpus.Corpus;
+import eu.modernmt.model.corpus.LazyCorpus;
+import eu.modernmt.model.corpus.LazyMultilingualCorpus;
 import eu.modernmt.model.corpus.MultilingualCorpus;
 import eu.modernmt.processing.ProcessingException;
 import eu.modernmt.training.BatchCopyProcess;
-import eu.modernmt.model.corpus.LazyCorpus;
-import eu.modernmt.model.corpus.LazyMultilingualCorpus;
 import eu.modernmt.training.PreprocessingPipeline;
-import eu.modernmt.cleaning.dedup.CorporaBloomFilter;
 import eu.modernmt.training.partitioning.CorporaPartition;
-import org.apache.commons.io.FileUtils;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import org.apache.commons.io.FileUtils;
 
-/**
- * Created by davide on 17/08/16.
- */
+/** Created by davide on 17/08/16. */
 public class TrainingFacade {
 
-    private static final int DEFAULT_PARTITION_SIZE = 2000;
-    private static final long DEFAULT_MAX_FILE_SIZE_PARALLEL_CLEANING = 2L * 1024L * 1024L * 1024L; // 2Gb
+  private static final int DEFAULT_PARTITION_SIZE = 2000;
+  private static final long DEFAULT_MAX_FILE_SIZE_PARALLEL_CLEANING =
+      2L * 1024L * 1024L * 1024L; // 2Gb
 
-    public static class TrainingOptions {
+  public static class TrainingOptions {
 
-        public int partitionSize = DEFAULT_PARTITION_SIZE;
-        public File developmentPartition = null;
-        public File testPartition = null;
+    public int partitionSize = DEFAULT_PARTITION_SIZE;
+    public File developmentPartition = null;
+    public File testPartition = null;
+  }
 
+  // - Cleaning
+  // ------------------------------------------------------------------------------------------------------
+
+  private static class RenameCorpusFactory implements BatchCopyProcess.OutputCorpusFactory {
+
+    private final File outputDirectory;
+
+    public RenameCorpusFactory(File outputDirectory) {
+      this.outputDirectory = outputDirectory;
     }
 
-    // - Cleaning ------------------------------------------------------------------------------------------------------
-
-    private static class RenameCorpusFactory implements BatchCopyProcess.OutputCorpusFactory {
-
-        private final File outputDirectory;
-
-        public RenameCorpusFactory(File outputDirectory) {
-            this.outputDirectory = outputDirectory;
-        }
-
-        @Override
-        public MultilingualCorpus getOutput(MultilingualCorpus corpus) {
-            return Corpora.rename(corpus, outputDirectory);
-        }
-
-        @Override
-        public Corpus getOutput(Corpus corpus) {
-            return Corpora.rename(corpus, outputDirectory);
-        }
+    @Override
+    public MultilingualCorpus getOutput(MultilingualCorpus corpus) {
+      return Corpora.rename(corpus, outputDirectory);
     }
 
-    private static class LazyWriterFactory implements BatchCopyProcess.OutputCorpusFactory {
+    @Override
+    public Corpus getOutput(Corpus corpus) {
+      return Corpora.rename(corpus, outputDirectory);
+    }
+  }
 
-        private final BatchCopyProcess.OutputCorpusFactory factory;
+  private static class LazyWriterFactory implements BatchCopyProcess.OutputCorpusFactory {
 
-        private LazyWriterFactory(BatchCopyProcess.OutputCorpusFactory factory) {
-            this.factory = factory;
-        }
+    private final BatchCopyProcess.OutputCorpusFactory factory;
 
-        @Override
-        public MultilingualCorpus getOutput(MultilingualCorpus corpus) {
-            return new LazyMultilingualCorpus(factory.getOutput(corpus));
-        }
-
-        @Override
-        public Corpus getOutput(Corpus corpus) {
-            return new LazyCorpus(factory.getOutput(corpus));
-        }
+    private LazyWriterFactory(BatchCopyProcess.OutputCorpusFactory factory) {
+      this.factory = factory;
     }
 
-    public void cleanMonolingual(List<Corpus> corpora, File outputDirectory, CorporaCleaning.Options options) throws IOException {
-        clean(null, corpora, options, new RenameCorpusFactory(outputDirectory));
+    @Override
+    public MultilingualCorpus getOutput(MultilingualCorpus corpus) {
+      return new LazyMultilingualCorpus(factory.getOutput(corpus));
     }
 
-    public void clean(List<MultilingualCorpus> corpora, File outputDirectory, CorporaCleaning.Options options) throws IOException {
-        clean(corpora, null, options, new RenameCorpusFactory(outputDirectory));
+    @Override
+    public Corpus getOutput(Corpus corpus) {
+      return new LazyCorpus(factory.getOutput(corpus));
+    }
+  }
+
+  public void cleanMonolingual(
+      List<Corpus> corpora, File outputDirectory, CorporaCleaning.Options options)
+      throws IOException {
+    clean(null, corpora, options, new RenameCorpusFactory(outputDirectory));
+  }
+
+  public void clean(
+      List<MultilingualCorpus> corpora, File outputDirectory, CorporaCleaning.Options options)
+      throws IOException {
+    clean(corpora, null, options, new RenameCorpusFactory(outputDirectory));
+  }
+
+  public void clean(
+      List<MultilingualCorpus> corpora,
+      CorporaCleaning.Options options,
+      BatchCopyProcess.OutputCorpusFactory factory)
+      throws IOException {
+    clean(corpora, null, options, factory);
+  }
+
+  public void clean(
+      List<MultilingualCorpus> multilingualCorpora,
+      List<Corpus> monolingualCorpora,
+      CorporaCleaning.Options options,
+      BatchCopyProcess.OutputCorpusFactory factory)
+      throws IOException {
+    long sizeThreshold = DEFAULT_MAX_FILE_SIZE_PARALLEL_CLEANING;
+
+    long maxMemory = Runtime.getRuntime().maxMemory();
+    if (maxMemory < Long.MAX_VALUE) sizeThreshold = maxMemory / 10;
+
+    BatchCopyProcess parallelCopyProcess = new BatchCopyProcess(new LazyWriterFactory(factory));
+    BatchCopyProcess serializedCopyProcess = new BatchCopyProcess(new LazyWriterFactory(factory));
+    serializedCopyProcess.setIoThreads(1);
+
+    if (multilingualCorpora != null) {
+      for (MultilingualCorpus corpus : multilingualCorpora) {
+        long fileSize = Corpora.stats(corpus).size;
+        corpus = CorporaCleaning.wrap(corpus, options);
+
+        if (fileSize < sizeThreshold) parallelCopyProcess.add(corpus);
+        else serializedCopyProcess.add(corpus);
+      }
     }
 
-    public void clean(List<MultilingualCorpus> corpora, CorporaCleaning.Options options, BatchCopyProcess.OutputCorpusFactory factory) throws IOException {
-        clean(corpora, null, options, factory);
+    if (monolingualCorpora != null) {
+      for (Corpus corpus : monolingualCorpora) {
+        long fileSize = Corpora.stats(corpus).size;
+        corpus = CorporaCleaning.wrap(corpus, options);
+
+        if (fileSize < sizeThreshold) parallelCopyProcess.add(corpus);
+        else serializedCopyProcess.add(corpus);
+      }
     }
 
-    public void clean(List<MultilingualCorpus> multilingualCorpora, List<Corpus> monolingualCorpora,
-                      CorporaCleaning.Options options, BatchCopyProcess.OutputCorpusFactory factory) throws IOException {
-        long sizeThreshold = DEFAULT_MAX_FILE_SIZE_PARALLEL_CLEANING;
+    parallelCopyProcess.run();
+    serializedCopyProcess.run();
+  }
 
-        long maxMemory = Runtime.getRuntime().maxMemory();
-        if (maxMemory < Long.MAX_VALUE)
-            sizeThreshold = maxMemory / 10;
+  // - Pre-process
+  // ---------------------------------------------------------------------------------------------------
 
-        BatchCopyProcess parallelCopyProcess = new BatchCopyProcess(new LazyWriterFactory(factory));
-        BatchCopyProcess serializedCopyProcess = new BatchCopyProcess(new LazyWriterFactory(factory));
-        serializedCopyProcess.setIoThreads(1);
+  public void preprocess(
+      LanguageDirection language, List<MultilingualCorpus> corpora, File destFolder)
+      throws ProcessingException, IOException, InterruptedException {
+    preprocess(language, corpora, destFolder, new TrainingOptions());
+  }
 
-        if (multilingualCorpora != null) {
-            for (MultilingualCorpus corpus : multilingualCorpora) {
-                long fileSize = Corpora.stats(corpus).size;
-                corpus = CorporaCleaning.wrap(corpus, options);
+  public void preprocess(
+      LanguageDirection language,
+      List<MultilingualCorpus> corpora,
+      File destFolder,
+      TrainingOptions options)
+      throws ProcessingException, IOException, InterruptedException {
+    CorporaPartition mainPartition = new CorporaPartition(destFolder);
+    PreprocessingPipeline pipeline = new PreprocessingPipeline(language, mainPartition);
 
-                if (fileSize < sizeThreshold)
-                    parallelCopyProcess.add(corpus);
-                else
-                    serializedCopyProcess.add(corpus);
-            }
-        }
+    FileUtils.deleteDirectory(destFolder);
 
-        if (monolingualCorpora != null) {
-            for (Corpus corpus : monolingualCorpora) {
-                long fileSize = Corpora.stats(corpus).size;
-                corpus = CorporaCleaning.wrap(corpus, options);
-
-                if (fileSize < sizeThreshold)
-                    parallelCopyProcess.add(corpus);
-                else
-                    serializedCopyProcess.add(corpus);
-            }
-        }
-
-        parallelCopyProcess.run();
-        serializedCopyProcess.run();
+    if (options.developmentPartition != null) {
+      FileUtils.deleteDirectory(options.developmentPartition);
+      pipeline.addExtraPartition(
+          new CorporaPartition(options.developmentPartition, options.partitionSize));
     }
 
-    // - Pre-process ---------------------------------------------------------------------------------------------------
-
-    public void preprocess(LanguageDirection language, List<MultilingualCorpus> corpora, File destFolder) throws ProcessingException, IOException, InterruptedException {
-        preprocess(language, corpora, destFolder, new TrainingOptions());
+    if (options.testPartition != null) {
+      FileUtils.deleteDirectory(options.testPartition);
+      pipeline.addExtraPartition(
+          new CorporaPartition(options.testPartition, options.partitionSize));
     }
 
-    public void preprocess(LanguageDirection language, List<MultilingualCorpus> corpora, File destFolder, TrainingOptions options) throws ProcessingException, IOException, InterruptedException {
-        CorporaPartition mainPartition = new CorporaPartition(destFolder);
-        PreprocessingPipeline pipeline = new PreprocessingPipeline(language, mainPartition);
+    pipeline.process(corpora);
+  }
 
-        FileUtils.deleteDirectory(destFolder);
+  // - Deduplicate
+  // ---------------------------------------------------------------------------------------------------
 
-        if (options.developmentPartition != null) {
-            FileUtils.deleteDirectory(options.developmentPartition);
-            pipeline.addExtraPartition(new CorporaPartition(options.developmentPartition, options.partitionSize));
-        }
+  public void deduplicate(
+      List<MultilingualCorpus> corpora, File outputDirectory, int lengthThreshold, boolean sorted)
+      throws IOException {
+    long lines = 0;
+    for (long count : Corpora.countLines(corpora).values()) lines += count;
 
-        if (options.testPartition != null) {
-            FileUtils.deleteDirectory(options.testPartition);
-            pipeline.addExtraPartition(new CorporaPartition(options.testPartition, options.partitionSize));
-        }
+    FileUtils.deleteDirectory(outputDirectory);
+    FileUtils.forceMkdir(outputDirectory);
 
-        pipeline.process(corpora);
-    }
+    CorporaBloomFilter bloomFilter = new CorporaBloomFilter(lines);
 
-    // - Deduplicate ---------------------------------------------------------------------------------------------------
+    BatchCopyProcess copyProcess =
+        new BatchCopyProcess(new LazyWriterFactory(new RenameCorpusFactory(outputDirectory)));
+    for (MultilingualCorpus corpus : corpora)
+      copyProcess.add(bloomFilter.wrap(corpus, lengthThreshold));
 
-    public void deduplicate(List<MultilingualCorpus> corpora, File outputDirectory, int lengthThreshold, boolean sorted) throws IOException {
-        long lines = 0;
-        for (long count : Corpora.countLines(corpora).values())
-            lines += count;
+    if (sorted) copyProcess.setIoThreads(1);
 
-        FileUtils.deleteDirectory(outputDirectory);
-        FileUtils.forceMkdir(outputDirectory);
+    copyProcess.run();
+  }
 
-        CorporaBloomFilter bloomFilter = new CorporaBloomFilter(lines);
+  public void deduplicateMonolingual(
+      List<Corpus> corpora, File outputDirectory, int lengthThreshold, boolean sorted)
+      throws IOException {
+    long lines = 0;
+    for (long count : Corpora.countMonolingualLines(corpora).values()) lines += count;
 
-        BatchCopyProcess copyProcess = new BatchCopyProcess(new LazyWriterFactory(new RenameCorpusFactory(outputDirectory)));
-        for (MultilingualCorpus corpus : corpora)
-            copyProcess.add(bloomFilter.wrap(corpus, lengthThreshold));
+    FileUtils.deleteDirectory(outputDirectory);
+    FileUtils.forceMkdir(outputDirectory);
 
-        if (sorted)
-            copyProcess.setIoThreads(1);
+    CorporaBloomFilter bloomFilter = new CorporaBloomFilter(lines);
 
-        copyProcess.run();
-    }
+    BatchCopyProcess copyProcess =
+        new BatchCopyProcess(new LazyWriterFactory(new RenameCorpusFactory(outputDirectory)));
+    for (Corpus corpus : corpora) copyProcess.add(bloomFilter.wrap(corpus, lengthThreshold));
 
-    public void deduplicateMonolingual(List<Corpus> corpora, File outputDirectory, int lengthThreshold, boolean sorted) throws IOException {
-        long lines = 0;
-        for (long count : Corpora.countMonolingualLines(corpora).values())
-            lines += count;
+    if (sorted) copyProcess.setIoThreads(1);
 
-        FileUtils.deleteDirectory(outputDirectory);
-        FileUtils.forceMkdir(outputDirectory);
-
-        CorporaBloomFilter bloomFilter = new CorporaBloomFilter(lines);
-
-        BatchCopyProcess copyProcess = new BatchCopyProcess(new LazyWriterFactory(new RenameCorpusFactory(outputDirectory)));
-        for (Corpus corpus : corpora)
-            copyProcess.add(bloomFilter.wrap(corpus, lengthThreshold));
-
-        if (sorted)
-            copyProcess.setIoThreads(1);
-
-        copyProcess.run();
-    }
-
+    copyProcess.run();
+  }
 }

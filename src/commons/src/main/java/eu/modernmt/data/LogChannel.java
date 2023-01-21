@@ -1,12 +1,9 @@
 package eu.modernmt.data;
 
-/**
- * Created by davide on 25/12/16.
- */
+/** Created by davide on 25/12/16. */
 public interface LogChannel {
 
-    short getId();
+  short getId();
 
-    String getName();
-
+  String getName();
 }

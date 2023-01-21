@@ -5,6 +5,5 @@ import eu.modernmt.api.framework.RESTResponse;
 
 public interface Action {
 
-    void execute(RESTRequest request, RESTResponse response);
-
+  void execute(RESTRequest request, RESTResponse response);
 }

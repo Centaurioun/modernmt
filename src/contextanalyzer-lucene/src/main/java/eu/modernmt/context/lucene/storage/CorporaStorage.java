@@ -4,8 +4,6 @@ import eu.modernmt.data.DataBatch;
 import eu.modernmt.data.DeletionMessage;
 import eu.modernmt.data.LogDataListener;
 import eu.modernmt.data.TranslationUnitMessage;
-import org.apache.commons.io.FileUtils;
-
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -13,159 +11,154 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import org.apache.commons.io.FileUtils;
 
 public class CorporaStorage implements LogDataListener, Closeable {
 
-    protected final File path;
-    protected final BucketRegistry buckets;
-    private boolean closed = false;
-    private final Map<Short, Long> channels;
+  protected final File path;
+  protected final BucketRegistry buckets;
+  private boolean closed = false;
+  private final Map<Short, Long> channels;
 
-    public CorporaStorage(File path) throws IOException {
-        this(path, true);
+  public CorporaStorage(File path) throws IOException {
+    this(path, true);
+  }
+
+  public CorporaStorage(File path, boolean maskLanguageRegion) throws IOException {
+    FileUtils.forceMkdir(path);
+
+    this.path = path;
+    this.buckets = new BucketRegistry(path, maskLanguageRegion);
+    this.channels = buckets.getChannels();
+  }
+
+  public BucketRegistry getRegistry() {
+    return buckets;
+  }
+
+  public int size() throws IOException {
+    return buckets.count();
+  }
+
+  public Set<Bucket> getUpdatedBuckets(long minMisalignment, int limit) throws IOException {
+    return buckets.getUpdated(minMisalignment, limit);
+  }
+
+  public void markUpdate(Bucket bucket, long size) throws IOException {
+    buckets.mark(bucket, size);
+  }
+
+  private boolean skipData(short channel, long position) {
+    Long existent = this.channels.get(channel);
+    return existent != null && position <= existent;
+  }
+
+  private static Map<Short, Long> advanceChannels(
+      Map<Short, Long> channels, Map<Short, Long> update) {
+    channels = new HashMap<>(channels);
+
+    for (Map.Entry<Short, Long> entry : update.entrySet()) {
+      Short channel = entry.getKey();
+      Long position = entry.getValue();
+      Long existent = channels.get(channel);
+
+      if (existent == null || position > existent) channels.put(channel, position);
     }
 
-    public CorporaStorage(File path, boolean maskLanguageRegion) throws IOException {
-        FileUtils.forceMkdir(path);
+    return channels;
+  }
 
-        this.path = path;
-        this.buckets = new BucketRegistry(path, maskLanguageRegion);
-        this.channels = buckets.getChannels();
-    }
+  public void prune() throws IOException {
+    try (DirectoryStream<Path> roots = Files.newDirectoryStream(this.path.toPath())) {
+      for (Path root : roots) {
+        if (!Files.isDirectory(root)) continue;
 
-    public BucketRegistry getRegistry() {
-        return buckets;
-    }
-
-    public int size() throws IOException {
-        return buckets.count();
-    }
-
-    public Set<Bucket> getUpdatedBuckets(long minMisalignment, int limit) throws IOException {
-        return buckets.getUpdated(minMisalignment, limit);
-    }
-
-    public void markUpdate(Bucket bucket, long size) throws IOException {
-        buckets.mark(bucket, size);
-    }
-
-    private boolean skipData(short channel, long position) {
-        Long existent = this.channels.get(channel);
-        return existent != null && position <= existent;
-    }
-
-    private static Map<Short, Long> advanceChannels(Map<Short, Long> channels, Map<Short, Long> update) {
-        channels = new HashMap<>(channels);
-
-        for (Map.Entry<Short, Long> entry : update.entrySet()) {
-            Short channel = entry.getKey();
-            Long position = entry.getValue();
-            Long existent = channels.get(channel);
-
-            if (existent == null || position > existent)
-                channels.put(channel, position);
+        try (DirectoryStream<Path> memories = Files.newDirectoryStream(root)) {
+          for (Path memory : memories) {
+            if (!Files.isDirectory(memory)) continue;
+            if (isEmpty(memory)) Files.delete(memory);
+          }
         }
 
-        return channels;
+        if (isEmpty(root)) Files.delete(root);
+      }
+    }
+  }
+
+  private static boolean isEmpty(Path path) throws IOException {
+    if (Files.isDirectory(path)) {
+      try (DirectoryStream<Path> directory = Files.newDirectoryStream(path)) {
+        return !directory.iterator().hasNext();
+      }
     }
 
-    public void prune() throws IOException {
-        try (DirectoryStream<Path> roots = Files.newDirectoryStream(this.path.toPath())) {
-            for (Path root : roots) {
-                if (!Files.isDirectory(root)) continue;
+    return false;
+  }
 
-                try (DirectoryStream<Path> memories = Files.newDirectoryStream(root)) {
-                    for (Path memory : memories) {
-                        if (!Files.isDirectory(memory)) continue;
-                        if (isEmpty(memory))
-                            Files.delete(memory);
-                    }
-                }
+  @Override
+  public synchronized void onDataReceived(DataBatch batch) throws IOException {
+    if (closed) return;
 
-                if (isEmpty(root))
-                    Files.delete(root);
-            }
-        }
+    HashSet<Bucket> pendingUpdatesBuckets = new HashSet<>();
+
+    // Apply changes
+
+    for (TranslationUnitMessage unit : batch.getTranslationUnits()) {
+      if (skipData(unit.channel, unit.channelPosition)) continue;
+
+      Bucket fwdBucket = buckets.get(unit.memory, unit.language, unit.owner);
+      fwdBucket.getWriter().append(unit.value.source);
+      pendingUpdatesBuckets.add(fwdBucket);
+
+      Bucket bwdBucket = buckets.get(unit.memory, unit.language.reversed(), unit.owner);
+      bwdBucket.getWriter().append(unit.value.target);
+      pendingUpdatesBuckets.add(bwdBucket);
     }
 
-    private static boolean isEmpty(Path path) throws IOException {
-        if (Files.isDirectory(path)) {
-            try (DirectoryStream<Path> directory = Files.newDirectoryStream(path)) {
-                return !directory.iterator().hasNext();
-            }
-        }
+    for (DeletionMessage deletion : batch.getDeletions()) {
+      if (skipData(deletion.channel, deletion.channelPosition)) continue;
 
-        return false;
+      for (Bucket bucket : buckets.getAll(deletion.memory)) {
+        bucket.getWriter().delete();
+        pendingUpdatesBuckets.add(bucket);
+      }
     }
 
-    @Override
-    public synchronized void onDataReceived(DataBatch batch) throws IOException {
-        if (closed)
-            return;
+    // Flush pending updates
 
-        HashSet<Bucket> pendingUpdatesBuckets = new HashSet<>();
-
-        // Apply changes
-
-        for (TranslationUnitMessage unit : batch.getTranslationUnits()) {
-            if (skipData(unit.channel, unit.channelPosition))
-                continue;
-
-            Bucket fwdBucket = buckets.get(unit.memory, unit.language, unit.owner);
-            fwdBucket.getWriter().append(unit.value.source);
-            pendingUpdatesBuckets.add(fwdBucket);
-
-            Bucket bwdBucket = buckets.get(unit.memory, unit.language.reversed(), unit.owner);
-            bwdBucket.getWriter().append(unit.value.target);
-            pendingUpdatesBuckets.add(bwdBucket);
-        }
-
-        for (DeletionMessage deletion : batch.getDeletions()) {
-            if (skipData(deletion.channel, deletion.channelPosition))
-                continue;
-
-            for (Bucket bucket : buckets.getAll(deletion.memory)) {
-                bucket.getWriter().delete();
-                pendingUpdatesBuckets.add(bucket);
-            }
-        }
-
-        // Flush pending updates
-
-        for (Bucket bucket : pendingUpdatesBuckets) {
-            BucketWriter writer = bucket.getWriter();
-            writer.flush();
-            writer.close();
-        }
-
-        // Update index and finalize
-
-        Map<Short, Long> updatedChannels = advanceChannels(channels, batch.getChannelPositions());
-        buckets.update(updatedChannels, pendingUpdatesBuckets);
-        channels.putAll(updatedChannels);
-
-        buckets.clearCache();
+    for (Bucket bucket : pendingUpdatesBuckets) {
+      BucketWriter writer = bucket.getWriter();
+      writer.flush();
+      writer.close();
     }
 
-    @Override
-    public Map<Short, Long> getLatestChannelPositions() {
-        return Collections.unmodifiableMap(channels);
-    }
+    // Update index and finalize
 
-    @Override
-    public boolean needsProcessing() {
-        return false;
-    }
+    Map<Short, Long> updatedChannels = advanceChannels(channels, batch.getChannelPositions());
+    buckets.update(updatedChannels, pendingUpdatesBuckets);
+    channels.putAll(updatedChannels);
 
-    @Override
-    public boolean needsAlignment() {
-        return false;
-    }
+    buckets.clearCache();
+  }
 
-    @Override
-    public synchronized void close() throws IOException {
-        closed = true;
-        buckets.close();
-    }
+  @Override
+  public Map<Short, Long> getLatestChannelPositions() {
+    return Collections.unmodifiableMap(channels);
+  }
 
+  @Override
+  public boolean needsProcessing() {
+    return false;
+  }
+
+  @Override
+  public boolean needsAlignment() {
+    return false;
+  }
+
+  @Override
+  public synchronized void close() throws IOException {
+    closed = true;
+    buckets.close();
+  }
 }

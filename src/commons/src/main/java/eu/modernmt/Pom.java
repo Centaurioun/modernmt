@@ -1,40 +1,36 @@
 package eu.modernmt;
 
-import org.apache.commons.io.IOUtils;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
+import org.apache.commons.io.IOUtils;
 
-/**
- * Created by davide on 28/06/17.
- */
+/** Created by davide on 28/06/17. */
 public class Pom {
 
-    private static Properties pomProperties = null;
+  private static Properties pomProperties = null;
 
-    public static String getProperty(String name) {
+  public static String getProperty(String name) {
+    if (pomProperties == null) {
+      synchronized (Pom.class) {
         if (pomProperties == null) {
-            synchronized (Pom.class) {
-                if (pomProperties == null) {
-                    InputStream stream = null;
+          InputStream stream = null;
 
-                    try {
-                        stream = Pom.class.getClassLoader().getResourceAsStream("pom-root.properties");
-                        Properties properties = new Properties();
-                        properties.load(stream);
+          try {
+            stream = Pom.class.getClassLoader().getResourceAsStream("pom-root.properties");
+            Properties properties = new Properties();
+            properties.load(stream);
 
-                        pomProperties = properties;
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    } finally {
-                        IOUtils.closeQuietly(stream);
-                    }
-                }
-            }
+            pomProperties = properties;
+          } catch (IOException e) {
+            throw new RuntimeException(e);
+          } finally {
+            IOUtils.closeQuietly(stream);
+          }
         }
-
-        return pomProperties.getProperty(name);
+      }
     }
 
+    return pomProperties.getProperty(name);
+  }
 }

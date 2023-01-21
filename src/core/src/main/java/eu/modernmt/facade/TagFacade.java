@@ -13,38 +13,38 @@ import eu.modernmt.processing.Preprocessor;
 import eu.modernmt.processing.ProcessingException;
 import eu.modernmt.processing.tags.projection.TagProjector;
 
-/**
- * Created by davide on 20/04/16.
- */
+/** Created by davide on 20/04/16. */
 public class TagFacade {
 
-    private static final TagProjector tagProjector = new TagProjector();
+  private static final TagProjector tagProjector = new TagProjector();
 
-    public Translation project(LanguageDirection direction, String sentence, String translation) throws AlignerException, ProcessingException {
-        return project(direction, sentence, translation, null);
-    }
+  public Translation project(LanguageDirection direction, String sentence, String translation)
+      throws AlignerException, ProcessingException {
+    return project(direction, sentence, translation, null);
+  }
 
-    public Translation project(LanguageDirection direction, String sentenceString, String translationString,
-                               Aligner.SymmetrizationStrategy strategy) throws AlignerException, ProcessingException {
-        ClusterNode node = ModernMT.getNode();
-        Engine engine = node.getEngine();
-        Aligner aligner = engine.getAligner();
-        Preprocessor preprocessor = engine.getPreprocessor();
+  public Translation project(
+      LanguageDirection direction,
+      String sentenceString,
+      String translationString,
+      Aligner.SymmetrizationStrategy strategy)
+      throws AlignerException, ProcessingException {
+    ClusterNode node = ModernMT.getNode();
+    Engine engine = node.getEngine();
+    Aligner aligner = engine.getAligner();
+    Preprocessor preprocessor = engine.getPreprocessor();
 
-        if (!aligner.isSupported(direction))
-            throw new UnsupportedLanguageException(direction);
+    if (!aligner.isSupported(direction)) throw new UnsupportedLanguageException(direction);
 
-        Sentence sentence = preprocessor.process(direction, sentenceString);
-        Sentence translation = preprocessor.process(direction.reversed(), translationString);
+    Sentence sentence = preprocessor.process(direction, sentenceString);
+    Sentence translation = preprocessor.process(direction.reversed(), translationString);
 
-        Alignment alignment;
+    Alignment alignment;
 
-        if (strategy != null)
-            alignment = aligner.getAlignment(direction, sentence, translation, strategy);
-        else
-            alignment = aligner.getAlignment(direction, sentence, translation);
+    if (strategy != null)
+      alignment = aligner.getAlignment(direction, sentence, translation, strategy);
+    else alignment = aligner.getAlignment(direction, sentence, translation);
 
-        return tagProjector.project(new Translation(translation.getWords(), sentence, alignment));
-    }
-
+    return tagProjector.project(new Translation(translation.getWords(), sentence, alignment));
+  }
 }

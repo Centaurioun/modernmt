@@ -6,7 +6,6 @@ import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.OperationService;
 import eu.modernmt.cluster.TranslationTask;
 import eu.modernmt.model.Translation;
-
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -15,56 +14,52 @@ import java.util.concurrent.TimeUnit;
  * A TranslationServiceProxy is an Hazelcast proxy for a TranslationService service.
  *
  * @see TranslationService
- * <p>
- * It is used by cluster members as a local endpoint to a remote TranslationService instance.
- * <p>
- * A TranslationServiceProxy is typically spawned by a TranslationService instance in its own cluster node,
- * and keeps a reference to its TranslationService.
+ *     <p>It is used by cluster members as a local endpoint to a remote TranslationService instance.
+ *     <p>A TranslationServiceProxy is typically spawned by a TranslationService instance in its own
+ *     cluster node, and keeps a reference to its TranslationService.
  */
 public class TranslationServiceProxy extends AbstractDistributedObject<TranslationService> {
 
-    private final String name;
+  private final String name;
 
-    TranslationServiceProxy(NodeEngine nodeEngine, TranslationService service, String name) {
-        super(nodeEngine, service);
-        this.name = name;
-    }
+  TranslationServiceProxy(NodeEngine nodeEngine, TranslationService service, String name) {
+    super(nodeEngine, service);
+    this.name = name;
+  }
 
-    @Override
-    public String getName() {
-        return name;
-    }
+  @Override
+  public String getName() {
+    return name;
+  }
 
-    @Override
-    public String getServiceName() {
-        return TranslationService.SERVICE_NAME;
-    }
+  @Override
+  public String getServiceName() {
+    return TranslationService.SERVICE_NAME;
+  }
 
-    /**
-     * This method allows this cluster Member to ask another Member to run a TranslationTask.
-     * The local TranslationServiceProxy creates a TranslationOperation for the task and
-     * uses the local OperationService to pass it to the TranslationService of the remote member.
-     *
-     * @param task    the TranslationTask to run
-     * @param address the Address of the Member that should run this task
-     * @return a Future for the Translation that this task will output
-     */
-    public Future<Translation> submit(TranslationTask task, Address address) {
-        OperationService localOperationService = getNodeEngine().getOperationService();
-        TranslationOperation operation = new TranslationOperation(task);
-        return localOperationService.invokeOnTarget(getServiceName(), operation, address);
-    }
+  /**
+   * This method allows this cluster Member to ask another Member to run a TranslationTask. The
+   * local TranslationServiceProxy creates a TranslationOperation for the task and uses the local
+   * OperationService to pass it to the TranslationService of the remote member.
+   *
+   * @param task the TranslationTask to run
+   * @param address the Address of the Member that should run this task
+   * @return a Future for the Translation that this task will output
+   */
+  public Future<Translation> submit(TranslationTask task, Address address) {
+    OperationService localOperationService = getNodeEngine().getOperationService();
+    TranslationOperation operation = new TranslationOperation(task);
+    return localOperationService.invokeOnTarget(getServiceName(), operation, address);
+  }
 
-    public void shutdown() {
-        ExecutorService service = getService().getExecutor();
+  public void shutdown() {
+    ExecutorService service = getService().getExecutor();
 
-        if (!service.isShutdown())
-            service.shutdown();
-    }
+    if (!service.isShutdown()) service.shutdown();
+  }
 
-    public void awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-        ExecutorService service = getService().getExecutor();
-        service.awaitTermination(timeout, unit);
-    }
-
+  public void awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+    ExecutorService service = getService().getExecutor();
+    service.awaitTermination(timeout, unit);
+  }
 }

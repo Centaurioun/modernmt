@@ -7,183 +7,162 @@ import eu.modernmt.lang.LanguageIndex;
 import eu.modernmt.lang.LanguagePattern;
 import org.w3c.dom.Element;
 
-/**
- * Created by davide on 04/01/17.
- */
+/** Created by davide on 04/01/17. */
 class XMLEngineConfigBuilder extends XMLAbstractBuilder {
 
-    private final XMLDecoderConfigBuilder decoderConfigBuilder;
-    private final XMLAlignerConfigBuilder alignerConfigBuilder;
-    private final XMLAnalyzerConfigBuilder analyzerConfigBuilder;
+  private final XMLDecoderConfigBuilder decoderConfigBuilder;
+  private final XMLAlignerConfigBuilder alignerConfigBuilder;
+  private final XMLAnalyzerConfigBuilder analyzerConfigBuilder;
 
-    public XMLEngineConfigBuilder(Element element) {
-        super(element);
-        decoderConfigBuilder = new XMLDecoderConfigBuilder(getChild("decoder"));
-        alignerConfigBuilder = new XMLAlignerConfigBuilder(getChild("aligner"));
-        analyzerConfigBuilder = new XMLAnalyzerConfigBuilder(getChild("analyzer"));
+  public XMLEngineConfigBuilder(Element element) {
+    super(element);
+    decoderConfigBuilder = new XMLDecoderConfigBuilder(getChild("decoder"));
+    alignerConfigBuilder = new XMLAlignerConfigBuilder(getChild("aligner"));
+    analyzerConfigBuilder = new XMLAnalyzerConfigBuilder(getChild("analyzer"));
+  }
+
+  public EngineConfig build(EngineConfig config) throws ConfigException {
+    LanguageIndex languages;
+
+    if (hasAttribute("source-language") || hasAttribute("target-language")) {
+      if (hasAttribute("source-language") && hasAttribute("target-language")) {
+        Language source = getLanguageAttribute("source-language");
+        Language target = getLanguageAttribute("target-language");
+
+        languages = new LanguageIndex.Builder().add(new LanguageDirection(source, target)).build();
+      } else {
+        throw new ConfigException("Missing source/target language specifier in <engine> element");
+      }
+    } else {
+      languages = parseLanguages(getChild("languages"));
     }
 
-    public EngineConfig build(EngineConfig config) throws ConfigException {
-        LanguageIndex languages;
+    if (languages == null)
+      throw new ConfigException("Missing language specification for <engine> element");
 
-        if (hasAttribute("source-language") || hasAttribute("target-language")) {
-            if (hasAttribute("source-language") && hasAttribute("target-language")) {
-                Language source = getLanguageAttribute("source-language");
-                Language target = getLanguageAttribute("target-language");
+    config.setLanguageIndex(languages);
 
-                languages = new LanguageIndex.Builder().add(new LanguageDirection(source, target)).build();
-            } else {
-                throw new ConfigException("Missing source/target language specifier in <engine> element");
-            }
-        } else {
-            languages = parseLanguages(getChild("languages"));
-        }
+    decoderConfigBuilder.build(config.getDecoderConfig());
+    alignerConfigBuilder.build(config.getAlignerConfig());
+    analyzerConfigBuilder.build(config.getAnalyzerConfig());
 
-        if (languages == null)
-            throw new ConfigException("Missing language specification for <engine> element");
+    return config;
+  }
 
-        config.setLanguageIndex(languages);
+  private LanguageIndex parseLanguages(Element element) throws ConfigException {
+    Element[] pairs = getChildren(element, "pair");
+    if (pairs == null) return null;
 
-        decoderConfigBuilder.build(config.getDecoderConfig());
-        alignerConfigBuilder.build(config.getAlignerConfig());
-        analyzerConfigBuilder.build(config.getAnalyzerConfig());
+    boolean pivot = hasAttribute(element, "use-pivot") && getBooleanAttribute(element, "use-pivot");
+    LanguageIndex.Builder builder = null;
 
-        return config;
+    for (Element pair : pairs) {
+      if (pair == null) continue;
+
+      Language source = getLanguageAttribute(pair, "source");
+      if (source == null) throw new ConfigException("Missing 'source' attribute");
+
+      Language target = getLanguageAttribute(pair, "target");
+      if (target == null) throw new ConfigException("Missing 'target' attribute");
+
+      if (builder == null) builder = new LanguageIndex.Builder();
+
+      builder.add(new LanguageDirection(source, target));
     }
 
-    private LanguageIndex parseLanguages(Element element) throws ConfigException {
-        Element[] pairs = getChildren(element, "pair");
-        if (pairs == null)
-            return null;
+    if (builder != null) parseLanguageRules(getChild(element, "rules"), builder);
 
-        boolean pivot = hasAttribute(element, "use-pivot") && getBooleanAttribute(element, "use-pivot");
-        LanguageIndex.Builder builder = null;
+    return builder == null ? null : builder.build(pivot);
+  }
 
-        for (Element pair : pairs) {
-            if (pair == null)
-                continue;
+  private static void parseLanguageRules(Element element, LanguageIndex.Builder builder)
+      throws ConfigException {
+    Element[] rules = getChildren(element, "rule");
+    if (rules == null) return;
 
-            Language source = getLanguageAttribute(pair, "source");
-            if (source == null)
-                throw new ConfigException("Missing 'source' attribute");
+    for (Element rule : rules) {
+      String _pattern = getStringAttribute(rule, "match");
+      if (_pattern == null) throw new ConfigException("Missing 'match' attribute");
 
-            Language target = getLanguageAttribute(pair, "target");
-            if (target == null)
-                throw new ConfigException("Missing 'target' attribute");
+      try {
+        LanguagePattern pattern = LanguagePattern.parse(_pattern);
 
-            if (builder == null)
-                builder = new LanguageIndex.Builder();
+        Language value = getLanguageAttribute(rule, "value");
+        if (value == null) throw new ConfigException("Missing 'value' attribute");
 
-            builder.add(new LanguageDirection(source, target));
-        }
+        builder.addRule(pattern, value);
+      } catch (IllegalArgumentException e) {
+        throw new ConfigException("Invalid 'match' attribute: " + _pattern, e);
+      }
+    }
+  }
 
-        if (builder != null)
-            parseLanguageRules(getChild(element, "rules"), builder);
+  private static class XMLAlignerConfigBuilder extends XMLAbstractBuilder {
 
-        return builder == null ? null : builder.build(pivot);
+    public XMLAlignerConfigBuilder(Element element) {
+      super(element);
     }
 
-    private static void parseLanguageRules(Element element, LanguageIndex.Builder builder) throws ConfigException {
-        Element[] rules = getChildren(element, "rule");
-        if (rules == null)
-            return;
+    public AlignerConfig build(AlignerConfig config) {
+      if (hasAttribute("enabled")) config.setEnabled(getBooleanAttribute("enabled"));
 
-        for (Element rule : rules) {
-            String _pattern = getStringAttribute(rule, "match");
-            if (_pattern == null)
-                throw new ConfigException("Missing 'match' attribute");
+      return config;
+    }
+  }
 
-            try {
-                LanguagePattern pattern = LanguagePattern.parse(_pattern);
+  private static class XMLDecoderConfigBuilder extends XMLAbstractBuilder {
 
-                Language value = getLanguageAttribute(rule, "value");
-                if (value == null)
-                    throw new ConfigException("Missing 'value' attribute");
-
-                builder.addRule(pattern, value);
-            } catch (IllegalArgumentException e) {
-                throw new ConfigException("Invalid 'match' attribute: " + _pattern, e);
-            }
-        }
+    public XMLDecoderConfigBuilder(Element element) {
+      super(element);
     }
 
-    private static class XMLAlignerConfigBuilder extends XMLAbstractBuilder {
+    public DecoderConfig build(DecoderConfig config) throws ConfigException {
+      if (hasAttribute("queue-size")) config.setQueueSize(getIntAttribute("queue-size"));
 
-        public XMLAlignerConfigBuilder(Element element) {
-            super(element);
+      if (hasAttribute("enabled")) config.setEnabled(getBooleanAttribute("enabled"));
+
+      if (hasAttribute("threads")) config.setThreads(getIntAttribute("threads"));
+
+      if (hasAttribute("class")) config.setDecoderClass(getStringAttribute("class"));
+
+      if (hasAttribute("gpus")) {
+        try {
+          config.setGPUs(getIntArrayAttribute("gpus"));
+        } catch (IllegalArgumentException e) {
+          throw new ConfigException("Invalid 'gpus' option", e);
         }
+      }
 
-        public AlignerConfig build(AlignerConfig config) {
-            if (hasAttribute("enabled"))
-                config.setEnabled(getBooleanAttribute("enabled"));
+      if (config.isUsingGPUs() && hasAttribute("threads"))
+        throw new ConfigException("In order to specify 'threads', you have to add gpus='none'");
 
-            return config;
-        }
+      if (hasAttribute("echo")) config.setEchoServer(getBooleanAttribute("echo"));
+
+      return config;
+    }
+  }
+
+  private static class XMLAnalyzerConfigBuilder extends XMLAbstractBuilder {
+
+    public XMLAnalyzerConfigBuilder(Element element) {
+      super(element);
     }
 
-    private static class XMLDecoderConfigBuilder extends XMLAbstractBuilder {
+    public AnalyzerConfig build(AnalyzerConfig config) {
+      if (hasAttribute("enabled")) config.setEnabled(getBooleanAttribute("enabled"));
 
-        public XMLDecoderConfigBuilder(Element element) {
-            super(element);
-        }
+      if (hasAttribute("analyze")) config.setAnalyze(getBooleanAttribute("analyze"));
 
-        public DecoderConfig build(DecoderConfig config) throws ConfigException {
-            if (hasAttribute("queue-size"))
-                config.setQueueSize(getIntAttribute("queue-size"));
+      if (hasAttribute("batch")) config.setBatchSize(getIntAttribute("batch"));
 
-            if (hasAttribute("enabled"))
-                config.setEnabled(getBooleanAttribute("enabled"));
+      if (hasAttribute("threads")) config.setThreads(getIntAttribute("threads"));
 
-            if (hasAttribute("threads"))
-                config.setThreads(getIntAttribute("threads"));
+      if (hasAttribute("timeout")) config.setTimeout(getIntAttribute("timeout"));
 
-            if (hasAttribute("class"))
-                config.setDecoderClass(getStringAttribute("class"));
+      if (hasAttribute("max-misalignment"))
+        config.setMaxToleratedMisalignment(getLongAttribute("max-misalignment"));
 
-            if (hasAttribute("gpus")) {
-                try {
-                    config.setGPUs(getIntArrayAttribute("gpus"));
-                } catch (IllegalArgumentException e) {
-                    throw new ConfigException("Invalid 'gpus' option", e);
-                }
-            }
-
-            if (config.isUsingGPUs() && hasAttribute("threads"))
-                throw new ConfigException("In order to specify 'threads', you have to add gpus='none'");
-
-            if (hasAttribute("echo"))
-                config.setEchoServer(getBooleanAttribute("echo"));
-
-            return config;
-        }
+      return config;
     }
-
-    private static class XMLAnalyzerConfigBuilder extends XMLAbstractBuilder {
-
-        public XMLAnalyzerConfigBuilder(Element element) {
-            super(element);
-        }
-
-        public AnalyzerConfig build(AnalyzerConfig config) {
-            if (hasAttribute("enabled"))
-                config.setEnabled(getBooleanAttribute("enabled"));
-
-            if (hasAttribute("analyze"))
-                config.setAnalyze(getBooleanAttribute("analyze"));
-
-            if (hasAttribute("batch"))
-                config.setBatchSize(getIntAttribute("batch"));
-
-            if (hasAttribute("threads"))
-                config.setThreads(getIntAttribute("threads"));
-
-            if (hasAttribute("timeout"))
-                config.setTimeout(getIntAttribute("timeout"));
-
-            if (hasAttribute("max-misalignment"))
-                config.setMaxToleratedMisalignment(getLongAttribute("max-misalignment"));
-
-            return config;
-        }
-    }
+  }
 }

@@ -5,10 +5,8 @@ package eu.modernmt.processing.tokenizer.languagetool.tiny;
  */
 public class TagalogWordTokenizer extends WordTokenizer {
 
-    @Override
-    public String getTokenizingCharacters() {
-        return super.getTokenizingCharacters() + "-";
-    }
-
+  @Override
+  public String getTokenizingCharacters() {
+    return super.getTokenizingCharacters() + "-";
+  }
 }
-

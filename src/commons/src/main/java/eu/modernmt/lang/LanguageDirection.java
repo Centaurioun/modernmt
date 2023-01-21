@@ -2,56 +2,54 @@ package eu.modernmt.lang;
 
 import java.io.Serializable;
 
-/**
- * Created by davide on 27/07/17.
- */
+/** Created by davide on 27/07/17. */
 public final class LanguageDirection implements Serializable {
 
-    public final Language source;
-    public final Language target;
-    private transient LanguageDirection reversed = null;
+  public final Language source;
+  public final Language target;
+  private transient LanguageDirection reversed = null;
 
-    public LanguageDirection(Language source, Language target) {
-        this.source = source;
-        this.target = target;
+  public LanguageDirection(Language source, Language target) {
+    this.source = source;
+    this.target = target;
+  }
+
+  public LanguageDirection reversed() {
+    if (reversed == null) {
+      LanguageDirection reversed = new LanguageDirection(target, source);
+      reversed.reversed = this;
+
+      this.reversed = reversed;
     }
 
-    public LanguageDirection reversed() {
-        if (reversed == null) {
-            LanguageDirection reversed = new LanguageDirection(target, source);
-            reversed.reversed = this;
+    return reversed;
+  }
 
-            this.reversed = reversed;
-        }
+  public boolean isEqualOrMoreGenericThan(LanguageDirection other) {
+    return source.isEqualOrMoreGenericThan(other.source)
+        && target.isEqualOrMoreGenericThan(other.target);
+  }
 
-        return reversed;
-    }
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
 
-    public boolean isEqualOrMoreGenericThan(LanguageDirection other) {
-        return source.isEqualOrMoreGenericThan(other.source) && target.isEqualOrMoreGenericThan(other.target);
-    }
+    LanguageDirection that = (LanguageDirection) o;
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+    if (!source.equals(that.source)) return false;
+    return target.equals(that.target);
+  }
 
-        LanguageDirection that = (LanguageDirection) o;
+  @Override
+  public int hashCode() {
+    int result = source.hashCode();
+    result = 31 * result + target.hashCode();
+    return result;
+  }
 
-        if (!source.equals(that.source)) return false;
-        return target.equals(that.target);
-    }
-
-    @Override
-    public int hashCode() {
-        int result = source.hashCode();
-        result = 31 * result + target.hashCode();
-        return result;
-    }
-
-    @Override
-    public String toString() {
-        return source + " \u2192 " + target;
-    }
-
+  @Override
+  public String toString() {
+    return source + " \u2192 " + target;
+  }
 }

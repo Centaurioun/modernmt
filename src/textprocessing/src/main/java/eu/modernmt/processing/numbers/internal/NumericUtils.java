@@ -2,43 +2,40 @@ package eu.modernmt.processing.numbers.internal;
 
 public class NumericUtils {
 
-    public static char[] joinDigits(NumericPlaceholder... placeholders) {
-        int length = 0;
-        for (NumericPlaceholder e : placeholders)
-            length += e.getDigits().length;
+  public static char[] joinDigits(NumericPlaceholder... placeholders) {
+    int length = 0;
+    for (NumericPlaceholder e : placeholders) length += e.getDigits().length;
 
-        char[] digits = new char[length];
-        int i = 0;
-        for (NumericPlaceholder e : placeholders) {
-            char[] piece = e.getDigits();
-            System.arraycopy(piece, 0, digits, i, piece.length);
-            i += piece.length;
-        }
-
-        return digits;
+    char[] digits = new char[length];
+    int i = 0;
+    for (NumericPlaceholder e : placeholders) {
+      char[] piece = e.getDigits();
+      System.arraycopy(piece, 0, digits, i, piece.length);
+      i += piece.length;
     }
 
-    public static String applyDigits(char[] digits, String text) {
-        char[] chars = text.toCharArray();
-        int index = 0;
+    return digits;
+  }
 
-        for (int i = 0; i < chars.length && index < digits.length; i++) {
-            if (chars[i] >= '0' && chars[i] <= '9')
-                chars[i] = digits[index++];
-        }
+  public static String applyDigits(char[] digits, String text) {
+    char[] chars = text.toCharArray();
+    int index = 0;
 
-        return new String(chars);
+    for (int i = 0; i < chars.length && index < digits.length; i++) {
+      if (chars[i] >= '0' && chars[i] <= '9') chars[i] = digits[index++];
     }
 
-    public static String obfuscate(String text) {
-        char[] chars = text.toCharArray();
+    return new String(chars);
+  }
 
-        for (int i = 0; i < chars.length; i++) {
-            char c = chars[i];
-            if (c >= '0' && c <= '9')
-                chars[i] = '?';
-        }
+  public static String obfuscate(String text) {
+    char[] chars = text.toCharArray();
 
-        return new String(chars);
+    for (int i = 0; i < chars.length; i++) {
+      char c = chars[i];
+      if (c >= '0' && c <= '9') chars[i] = '?';
     }
+
+    return new String(chars);
+  }
 }
