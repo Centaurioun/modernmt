@@ -29,7 +29,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.build.timestamp.format>yyyyMMddHHmm</maven.build.timestamp.format>
 
-        <lucene.version>4.10.4</lucene.version>
+        <lucene.version>9.4.2</lucene.version>
         <kafka.version>2.4.0</kafka.version>
         <cassandra.version>3.11.10</cassandra.version>
 
