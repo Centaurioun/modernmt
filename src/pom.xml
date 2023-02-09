@@ -30,7 +30,7 @@
         <maven.build.timestamp.format>yyyyMMddHHmm</maven.build.timestamp.format>
 
         <lucene.version>4.10.4</lucene.version>
-        <kafka.version>2.4.0</kafka.version>
+        <kafka.version>3.4.0</kafka.version>
         <cassandra.version>3.11.10</cassandra.version>
 
         <mmt.version>4.9.5</mmt.version>
@@ -129,5 +129,5 @@
             <artifactId>guava</artifactId>
             <version>29.0-jre</version>
         </dependency>
-    </dependencies>
+    
 </project>
