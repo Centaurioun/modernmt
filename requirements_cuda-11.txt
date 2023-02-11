@@ -7,3 +7,4 @@ torch==1.7.1+cu110
 fairseq==0.10.1
 setuptools>=65.5.1 # not directly required, pinned by Snyk to avoid a vulnerability
 wheel>=0.38.0 # not directly required, pinned by Snyk to avoid a vulnerability
+numpy>=1.22.2 # not directly required, pinned by Snyk to avoid a vulnerability
