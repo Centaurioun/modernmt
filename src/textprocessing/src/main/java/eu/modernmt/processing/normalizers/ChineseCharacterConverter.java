@@ -1,4 +1,5 @@
 package eu.modernmt.processing.normalizers;
+
 import eu.modernmt.lang.Language;
 import eu.modernmt.lang.UnsupportedLanguageException;
 import eu.modernmt.model.Translation;
